@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -93,28 +91,13 @@ func main() {
 		log.Fatal("BOT_TOKEN environment variable is not set")
 	}
 
-	logDir := "/app/logs"
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Fatalf("Failed to create log dir: %v", err)
-	}
-
-	logFile, err := os.OpenFile(filepath.Join(logDir, "server.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
-	}
-	defer logFile.Close()
-
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
-	log.SetOutput(multiWriter)
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile) // Добавляем дату, время, файл для детальности
-
 	log.Println("Server starting...")
 
 	r := gin.New()
-
-	r.Use(gin.LoggerWithWriter(multiWriter))
+	r.Use(gin.Logger())
 	r.Use(authMiddleware(token))
 	r.GET("/", showInitDataMiddleware)
+	r.POST("/", showInitDataMiddleware)
 
 	if err := r.Run(":3000"); err != nil {
 		panic(err)
