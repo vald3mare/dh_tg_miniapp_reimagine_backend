@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -37,29 +36,50 @@ func InitDB() error {
 	if err = db.Ping(); err != nil {
 		return fmt.Errorf("ping к БД провалился: %w", err)
 	}
-
 	log.Println("PostgreSQL успешно подключена (pgx)")
 
-	// Миграции через migrate
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	// 1. Создаём users
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
+            first_name VARCHAR(255),
+            last_name VARCHAR(255),
+            username VARCHAR(255),
+            language_code VARCHAR(10),
+            is_premium BOOLEAN,
+            photo_url VARCHAR(512),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    `)
 	if err != nil {
-		return fmt.Errorf("не удалось создать драйвер миграций: %w", err)
+		return fmt.Errorf("ошибка создания users: %w", err)
 	}
+	log.Println("Таблица users создана/обновлена")
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://../migrations", // путь к папке migrations относительно cmd/server
-		"postgres", driver,
-	)
+	// Ключевой момент: даём PostgreSQL время обновить каталог
+	time.Sleep(100 * time.Millisecond) // 100ms пауза — обычно хватает
+	db.Ping()                          // дополнительный пинг для сброса кэша
+
+	// 2. Создаём subscriptions
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            plan VARCHAR(50) DEFAULT 'free',
+            active BOOLEAN DEFAULT false,
+            start_date TIMESTAMPTZ,
+            end_date TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    `)
 	if err != nil {
-		return fmt.Errorf("не удалось создать мигратор: %w", err)
+		return fmt.Errorf("ошибка создания subscriptions: %w", err)
 	}
+	log.Println("Таблица subscriptions создана/обновлена")
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("ошибка миграции: %w", err)
-	}
-
-	log.Println("Миграции успешно применены (или уже актуальны)")
-
-	DB = db
+	log.Println("PostgreSQL успешно подключена и мигрирована")
 	return nil
 }
