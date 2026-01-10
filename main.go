@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	initdata "github.com/telegram-mini-apps/init-data-golang"
 )
@@ -94,9 +95,17 @@ func main() {
 	log.Println("Server starting...")
 
 	r := gin.New()
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders:     []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
 	r.Use(gin.Logger())
 	r.Use(authMiddleware(token))
-	r.GET("/", showInitDataMiddleware)
 	r.POST("/", showInitDataMiddleware)
 
 	if err := r.Run(":3000"); err != nil {
