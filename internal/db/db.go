@@ -1,49 +1,74 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
 
-	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	_ "github.com/jackc/pgx/v5/stdlib" // pgx как драйвер
 )
 
-var DB *gorm.DB
+var DB *sql.DB
 
 func InitDB() error {
-	// Бери данные из ENV (Timeweb Cloud позволяет задавать их в панели)
-	host := os.Getenv("DB_HOST") // например db.timeweb.cloud или localhost
-	port := os.Getenv("DB_PORT") // 5432
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
 	user := os.Getenv("DB_USER")
 	password := os.Getenv("DB_PASSWORD")
 	dbname := os.Getenv("DB_NAME")
-	sslmode := os.Getenv("DB_SSLMODE") // disable или require
+	sslmode := os.Getenv("DB_SSLMODE")
 
 	if host == "" || user == "" || password == "" || dbname == "" {
-		log.Fatal("Не заданы переменные окружения для БД (DB_HOST, DB_USER и т.д.)")
-		return fmt.Errorf("database environment variables are not set")
+		return fmt.Errorf("не заданы переменные окружения для БД (DB_HOST, DB_USER и т.д.)")
 	}
 
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=UTC",
-		host, user, password, dbname, port, sslmode)
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		log.Fatal("Не удалось подключиться к PostgreSQL:", err)
-		return err
+		return fmt.Errorf("не удалось открыть соединение: %w", err)
 	}
 
-	// Автомиграция таблиц (создаёт/обновляет таблицы по моделям)
-	err = db.AutoMigrate(&models.User{}, &models.Subscription{})
-    if err != nil {
-        log.Printf("Ошибка миграции: %v", err)
-        return err
-    }
+	// Проверка подключения
+	if err = db.Ping(); err != nil {
+		return fmt.Errorf("ping к БД провалился: %w", err)
+	}
 
 	DB = db
-	log.Println("PostgreSQL успешно подключена и мигрирована")
+	log.Println("PostgreSQL успешно подключена (pgx)")
+
+	// Ручная миграция (SQL-скрипт)
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id BIGSERIAL PRIMARY KEY,
+			telegram_id BIGINT UNIQUE NOT NULL,
+			first_name VARCHAR(255),
+			last_name VARCHAR(255),
+			username VARCHAR(255),
+			language_code VARCHAR(10),
+			is_premium BOOLEAN,
+			photo_url VARCHAR(512),
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS subscriptions (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			plan VARCHAR(50) DEFAULT 'free',
+			active BOOLEAN DEFAULT false,
+			start_date TIMESTAMPTZ,
+			end_date TIMESTAMPTZ,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("ошибка миграции таблиц: %w", err)
+	}
+
+	log.Println("Таблицы users и subscriptions созданы/обновлены (ручная миграция)")
 	return nil
 }

@@ -18,8 +18,7 @@ func main() {
 	}
 
 	// Подключаем БД (если нужно — раскомментируй, когда будешь готов)
-	err := db.InitDB()
-	if err != nil {
+	if err := db.InitDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
@@ -69,6 +68,6 @@ func main() {
 	}
 
 	if db.DB == nil {
-    	log.Fatal("DB is nil after InitDB")
+		log.Fatal("DB is nil after InitDB")
 	}
 }
