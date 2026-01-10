@@ -4,15 +4,17 @@ import (
 	//"context"
 	"log"
 	"os"
+
 	//"strings"
 	//"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
 	//initdata "github.com/telegram-mini-apps/init-data-golang"
 
-	//"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"          // ← подключение БД (добавь позже)
-	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/handlers"    // ← твои хендлеры
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"          // ← подключение БД
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/handlers" // ← твои хендлеры
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
 )
 
@@ -21,6 +23,8 @@ func main() {
 	if token == "" {
 		log.Fatal("BOT_TOKEN environment variable is not set")
 	}
+
+	db.InitDB()
 
 	log.Println("Server starting...")
 
@@ -40,7 +44,7 @@ func main() {
 
 	protected := r.Group("/")
 	{
-		protected.POST("/", handlers.ShowInitData) // текущий тестовый
+		protected.POST("/", handlers.ShowInitData)     // текущий тестовый
 		protected.GET("/profile", handlers.GetProfile) // новый для профиля
 		// protected.POST("/subscription/cancel", handlers.CancelSubscription)
 		// protected.POST("/subscription/renew", handlers.RenewSubscription)

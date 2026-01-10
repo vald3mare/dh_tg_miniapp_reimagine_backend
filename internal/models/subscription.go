@@ -5,10 +5,10 @@ import "time"
 type Subscription struct {
 	ID        uint   `gorm:"primaryKey"`
 	UserID    uint   `gorm:"uniqueIndex;not null"`
-	Plan      string `gorm:"default:'free'"` // free, basic, premium
+	Plan      string `gorm:"size:50;default:'free'"`
 	Active    bool   `gorm:"default:false"`
 	StartDate time.Time
-	EndDate   time.Time
+	EndDate   time.Time `gorm:"index"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
