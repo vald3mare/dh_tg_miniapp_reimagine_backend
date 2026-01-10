@@ -4,7 +4,7 @@ import "time"
 
 type Subscription struct {
 	ID        uint   `gorm:"primaryKey"`
-	UserID    uint   `gorm:"uniqueIndex;not null"`
+	UserID    uint   `gorm:"index"`
 	Plan      string `gorm:"size:50;default:'free'"`
 	Active    bool   `gorm:"default:false"`
 	StartDate time.Time

@@ -37,19 +37,11 @@ func InitDB() error {
 	}
 
 	// Автомиграция таблиц (создаёт/обновляет таблицы по моделям)
-	// 1. Сначала создаём таблицу users (без FK)
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		log.Printf("Ошибка миграции users: %v", err)
-		return err
-	}
-	log.Println("Таблица users создана/обновлена")
-
-	// 2. Затем subscriptions (с FK на users)
-	if err := db.AutoMigrate(&models.Subscription{}); err != nil {
-		log.Printf("Ошибка миграции subscriptions: %v", err)
-		return err
-	}
-	log.Println("Таблица subscriptions создана/обновлена")
+	err = db.AutoMigrate(&models.User{}, &models.Subscription{})
+    if err != nil {
+        log.Printf("Ошибка миграции: %v", err)
+        return err
+    }
 
 	DB = db
 	log.Println("PostgreSQL успешно подключена и мигрирована")
