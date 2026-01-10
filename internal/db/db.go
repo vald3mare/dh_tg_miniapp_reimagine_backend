@@ -36,39 +36,46 @@ func InitDB() error {
 		return fmt.Errorf("ping к БД провалился: %w", err)
 	}
 
-	DB = db
 	log.Println("PostgreSQL успешно подключена (pgx)")
 
-	// Ручная миграция (SQL-скрипт)
+	// 1. Создаём таблицу users (без зависимостей)
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-			id BIGSERIAL PRIMARY KEY,
-			telegram_id BIGINT UNIQUE NOT NULL,
-			first_name VARCHAR(255),
-			last_name VARCHAR(255),
-			username VARCHAR(255),
-			language_code VARCHAR(10),
-			is_premium BOOLEAN,
-			photo_url VARCHAR(512),
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW()
-		);
-
-		CREATE TABLE IF NOT EXISTS subscriptions (
-			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			plan VARCHAR(50) DEFAULT 'free',
-			active BOOLEAN DEFAULT false,
-			start_date TIMESTAMPTZ,
-			end_date TIMESTAMPTZ,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW()
-		);
-	`)
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
+            first_name VARCHAR(255),
+            last_name VARCHAR(255),
+            username VARCHAR(255),
+            language_code VARCHAR(10),
+            is_premium BOOLEAN,
+            photo_url VARCHAR(512),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    `)
 	if err != nil {
-		return fmt.Errorf("ошибка миграции таблиц: %w", err)
+		return fmt.Errorf("ошибка создания таблицы users: %w", err)
 	}
+	log.Println("Таблица users создана/обновлена")
 
-	log.Println("Таблицы users и subscriptions созданы/обновлены (ручная миграция)")
+	// 2. Создаём таблицу subscriptions (с FK на users)
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            plan VARCHAR(50) DEFAULT 'free',
+            active BOOLEAN DEFAULT false,
+            start_date TIMESTAMPTZ,
+            end_date TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    `)
+	if err != nil {
+		return fmt.Errorf("ошибка создания таблицы subscriptions: %w", err)
+	}
+	log.Println("Таблица subscriptions создана/обновлена")
+
+	log.Println("PostgreSQL успешно подключена и мигрирована")
 	return nil
 }
