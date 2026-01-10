@@ -6,7 +6,10 @@ import (
 	"log"
 	"os"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // pgx как драйвер
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 var DB *sql.DB
@@ -20,62 +23,43 @@ func InitDB() error {
 	sslmode := os.Getenv("DB_SSLMODE")
 
 	if host == "" || user == "" || password == "" || dbname == "" {
-		return fmt.Errorf("не заданы переменные окружения для БД (DB_HOST, DB_USER и т.д.)")
+		return fmt.Errorf("не заданы переменные окружения для БД")
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		user, password, host, port, dbname, sslmode)
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return fmt.Errorf("не удалось открыть соединение: %w", err)
 	}
 
-	// Проверка подключения
 	if err = db.Ping(); err != nil {
 		return fmt.Errorf("ping к БД провалился: %w", err)
 	}
 
 	log.Println("PostgreSQL успешно подключена (pgx)")
 
-	// 1. Создаём таблицу users (без зависимостей)
-	_, err = db.Exec(`
-        CREATE TABLE IF NOT EXISTS users (
-            id BIGSERIAL PRIMARY KEY,
-            telegram_id BIGINT UNIQUE NOT NULL,
-            first_name VARCHAR(255),
-            last_name VARCHAR(255),
-            username VARCHAR(255),
-            language_code VARCHAR(10),
-            is_premium BOOLEAN,
-            photo_url VARCHAR(512),
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-    `)
+	// Миграции через migrate
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return fmt.Errorf("ошибка создания таблицы users: %w", err)
+		return fmt.Errorf("не удалось создать драйвер миграций: %w", err)
 	}
-	log.Println("Таблица users создана/обновлена")
 
-	// 2. Создаём таблицу subscriptions (с FK на users)
-	_, err = db.Exec(`
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            plan VARCHAR(50) DEFAULT 'free',
-            active BOOLEAN DEFAULT false,
-            start_date TIMESTAMPTZ,
-            end_date TIMESTAMPTZ,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-    `)
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://../migrations", // путь к папке migrations относительно cmd/server
+		"postgres", driver,
+	)
 	if err != nil {
-		return fmt.Errorf("ошибка создания таблицы subscriptions: %w", err)
+		return fmt.Errorf("не удалось создать мигратор: %w", err)
 	}
-	log.Println("Таблица subscriptions создана/обновлена")
 
-	log.Println("PostgreSQL успешно подключена и мигрирована")
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("ошибка миграции: %w", err)
+	}
+
+	log.Println("Миграции успешно применены (или уже актуальны)")
+
+	DB = db
 	return nil
 }
