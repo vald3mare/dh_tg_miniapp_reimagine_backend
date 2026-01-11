@@ -7,21 +7,28 @@ import (
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/handlers"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/yookassa"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	// Чтение токена бота из переменных окружения
 	token := os.Getenv("BOT_TOKEN")
 	if token == "" {
 		log.Fatal("BOT_TOKEN environment variable is not set")
 	}
+
 	// Инициализация базы данных
 	if err := db.InitDB(); err != nil {
 		log.Printf("WARNING: Failed to initialize database: %v - continuing without DB", err)
-		// Не fatal — приложение запускается даже без БД
 	} else {
 		log.Println("Database initialized successfully")
+	}
+
+	// Инициализация ЮKassa клиента
+	if err := yookassa.Init(); err != nil {
+		log.Printf("WARNING: Failed to initialize Yookassa: %v", err)
 	}
 
 	log.Println("Server starting...")
@@ -47,18 +54,25 @@ func main() {
 	protected := r.Group("/")
 	protected.Use(auth)
 	{
-		protected.POST("/", handlers.ShowInitData)     // тестовый/авторизационный
+		protected.POST("/", handlers.ShowInitData)
 		protected.GET("/profile", handlers.GetProfile) // профиль
-		// protected.POST("/subscription/cancel", handlers.CancelSubscription)
-		// protected.POST("/subscription/renew", handlers.RenewSubscription)
+		protected.POST("/payment/create", handlers.CreatePayment)
+		protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
+		protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
+		protected.POST("/payment/:payment_id/capture", handlers.CapturePayment)
+		protected.POST("/subscription/cancel", handlers.CancelSubscription)
 	}
+
+	// Вебхуки и платежные редиректы (открытые роуты)
+	r.POST("/webhook/yookassa", handlers.YookassaWebhook)
+	r.GET("/payment/success", handlers.PaymentSuccess)
 
 	// Не защищённый health-check (для Timeweb и мониторинга)
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Запуск сервера — самый последний шаг!
+	// Запуск сервера
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000" // fallback для локального запуска
