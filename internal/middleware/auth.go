@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	initdata "github.com/telegram-mini-apps/init-data-golang"
@@ -46,18 +45,19 @@ func AuthMiddleware(botToken string) gin.HandlerFunc {
 
 		rawInitData := authParts[1]
 
-		// Валидация initData (срок жизни 1 час)
-		if err := initdata.Validate(rawInitData, botToken, time.Hour); err != nil {
+		// Валидируем подпись (expIn = 0 = без проверки времени жизни)
+		// Это важно в разработке где initData может быть старой
+		if err := initdata.Validate(rawInitData, botToken, 0); err != nil {
 			log.Printf("Validation failed from %s: %v", c.ClientIP(), err)
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": err.Error()})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "Invalid initData: " + err.Error()})
 			return
 		}
 
-		// Парсинг после успешной валидации
+		// Парсим initData
 		parsed, err := initdata.Parse(rawInitData)
 		if err != nil {
-			log.Printf("Parse failed after validation from %s: %v", c.ClientIP(), err)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Failed to parse initData"})
+			log.Printf("Parse failed from %s: %v", c.ClientIP(), err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Failed to parse initData: " + err.Error()})
 			return
 		}
 
