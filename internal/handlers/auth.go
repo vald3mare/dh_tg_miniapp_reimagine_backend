@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"context"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
@@ -14,11 +12,7 @@ import (
 )
 
 func ShowInitData(c *gin.Context) {
-	ctx := c.Request.Context() // Контекст из Gin (отменяется при закрытии запроса)
-
-	// Добавляем таймаут на весь запрос (5 секунд — по доке GORM)
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	initData, ok := middleware.CtxInitData(ctx)
 	if !ok {
@@ -28,12 +22,29 @@ func ShowInitData(c *gin.Context) {
 
 	tgUser := initData.User
 
-	// Используем GetDBWithContext для всех операций
+	// Проверяем, доступна ли БД
+	if db.DB == nil {
+		log.Println("WARNING: БД недоступна — возвращаем данные только из Telegram")
+		c.JSON(http.StatusOK, gin.H{
+			"user": gin.H{
+				"id":         tgUser.ID,
+				"first_name": tgUser.FirstName,
+				"last_name":  tgUser.LastName,
+				"username":   tgUser.Username,
+				"language":   tgUser.LanguageCode,
+				"is_premium": tgUser.IsPremium,
+				"photo_url":  tgUser.PhotoURL,
+			},
+			"auth_date": initData.AuthDate,
+			"note":      "DB not available",
+		})
+		return
+	}
+
 	dbCtx := db.GetDBWithContext(ctx)
 
 	var user models.User
 	if err := dbCtx.Where("telegram_id = ?", tgUser.ID).First(&user).Error; err != nil {
-		// Не найден — создаём нового
 		user = models.User{
 			TelegramID:   tgUser.ID,
 			FirstName:    tgUser.FirstName,
@@ -45,12 +56,11 @@ func ShowInitData(c *gin.Context) {
 		}
 		if err := dbCtx.Create(&user).Error; err != nil {
 			log.Printf("Ошибка создания пользователя: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "DB write error"})
 			return
 		}
 		log.Printf("Создан новый пользователь: ID=%d", user.ID)
 	} else {
-		// Обновляем
 		user.FirstName = tgUser.FirstName
 		user.LastName = tgUser.LastName
 		user.Username = tgUser.Username
@@ -64,7 +74,6 @@ func ShowInitData(c *gin.Context) {
 		}
 	}
 
-	// Preload подписки с контекстом
 	if err := dbCtx.Preload("Subscription").First(&user).Error; err != nil {
 		log.Printf("Ошибка Preload подписки: %v", err)
 	}
