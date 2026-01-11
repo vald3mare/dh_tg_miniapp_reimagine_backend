@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// Не защищённый health-check (для Timeweb и мониторинга)
-	r.GET("/health", func(c *gin.Context) {
+	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	log.Printf("Listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
+	if err := r.Run("0.0.0.0:" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 

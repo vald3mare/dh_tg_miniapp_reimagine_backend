@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
@@ -12,7 +14,13 @@ import (
 )
 
 func ShowInitData(c *gin.Context) {
-	initData, ok := middleware.CtxInitData(c.Request.Context())
+	ctx := c.Request.Context() // Контекст из Gin (отменяется при закрытии запроса)
+
+	// Добавляем таймаут на весь запрос (5 секунд — по доке GORM)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	initData, ok := middleware.CtxInitData(ctx)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Init data not found"})
 		return
@@ -20,10 +28,12 @@ func ShowInitData(c *gin.Context) {
 
 	tgUser := initData.User
 
-	// По доке GORM: First с Where для поиска
+	// Используем GetDBWithContext для всех операций
+	dbCtx := db.GetDBWithContext(ctx)
+
 	var user models.User
-	if err := db.DB.Where("telegram_id = ?", tgUser.ID).First(&user).Error; err != nil {
-		// Не найден — Create (по доке GORM: Create)
+	if err := dbCtx.Where("telegram_id = ?", tgUser.ID).First(&user).Error; err != nil {
+		// Не найден — создаём нового
 		user = models.User{
 			TelegramID:   tgUser.ID,
 			FirstName:    tgUser.FirstName,
@@ -33,33 +43,32 @@ func ShowInitData(c *gin.Context) {
 			IsPremium:    tgUser.IsPremium,
 			PhotoURL:     tgUser.PhotoURL,
 		}
-		if err := db.DB.Create(&user).Error; err != nil {
+		if err := dbCtx.Create(&user).Error; err != nil {
 			log.Printf("Ошибка создания пользователя: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
 			return
 		}
 		log.Printf("Создан новый пользователь: ID=%d", user.ID)
 	} else {
-		// Найден — обновляем (по доке GORM: Save)
+		// Обновляем
 		user.FirstName = tgUser.FirstName
 		user.LastName = tgUser.LastName
 		user.Username = tgUser.Username
 		user.LanguageCode = tgUser.LanguageCode
 		user.IsPremium = tgUser.IsPremium
 		user.PhotoURL = tgUser.PhotoURL
-		if err := db.DB.Save(&user).Error; err != nil {
+		if err := dbCtx.Save(&user).Error; err != nil {
 			log.Printf("Ошибка обновления пользователя: %v", err)
 		} else {
 			log.Printf("Обновлён пользователь: ID=%d", user.ID)
 		}
 	}
 
-	// Загружаем подписку (по доке GORM: Preload)
-	if err := db.DB.Preload("Subscription").First(&user).Error; err != nil {
+	// Preload подписки с контекстом
+	if err := dbCtx.Preload("Subscription").First(&user).Error; err != nil {
 		log.Printf("Ошибка Preload подписки: %v", err)
 	}
 
-	// Возвращаем
 	c.JSON(http.StatusOK, gin.H{
 		"user":      user,
 		"auth_date": initData.AuthDate,
