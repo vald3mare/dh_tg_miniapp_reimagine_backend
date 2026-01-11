@@ -16,10 +16,12 @@ func main() {
 	if token == "" {
 		log.Fatal("BOT_TOKEN environment variable is not set")
 	}
-
-	// Подключаем БД (если нужно — раскомментируй, когда будешь готов)
+	// Инициализация базы данных
 	if err := db.InitDB(); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Printf("WARNING: Failed to initialize database: %v - continuing without DB", err)
+		// Не fatal — приложение запускается даже без БД
+	} else {
+		log.Println("Database initialized successfully")
 	}
 
 	log.Println("Server starting...")
@@ -52,7 +54,7 @@ func main() {
 	}
 
 	// Не защищённый health-check (для Timeweb и мониторинга)
-	r.GET("/", func(c *gin.Context) {
+	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
