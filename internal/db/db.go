@@ -64,17 +64,21 @@ func InitDB() error {
 
 	log.Println("PostgreSQL успешно подключена")
 
-	// Миграции (с защитой от ошибок)
+	// Сначала users
 	if err := db.AutoMigrate(&models.User{}); err != nil {
 		log.Printf("WARNING: Ошибка миграции users: %v", err)
 	} else {
-		log.Println("Таблица users создана/обновлена")
+		log.Println("Таблица users мигрирована")
 	}
 
+	// Пауза для Postgres (чтобы каталог обновился)
+	time.Sleep(500 * time.Millisecond)
+
+	// Затем subscriptions
 	if err := db.AutoMigrate(&models.Subscription{}); err != nil {
 		log.Printf("WARNING: Ошибка миграции subscriptions: %v", err)
 	} else {
-		log.Println("Таблица subscriptions создана/обновлена")
+		log.Println("Таблица subscriptions мигрирована")
 	}
 
 	DB = db
