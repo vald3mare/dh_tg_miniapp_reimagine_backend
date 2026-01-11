@@ -49,6 +49,7 @@ func main() {
 
 	// Middleware авторизации — применяется ко всем защищённым роутам
 	auth := middleware.AuthMiddleware(token)
+	log.Println(auth)
 
 	// Защищённые роуты (все под /)
 	protected := r.Group("/")

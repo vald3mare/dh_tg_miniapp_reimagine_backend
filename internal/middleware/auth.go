@@ -44,6 +44,7 @@ func AuthMiddleware(botToken string) gin.HandlerFunc {
 		}
 
 		rawInitData := authParts[1]
+		log.Println("Raw init data:", rawInitData)
 
 		// Валидируем подпись (expIn = 0 = без проверки времени жизни)
 		// Это важно в разработке где initData может быть старой
