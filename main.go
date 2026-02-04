@@ -34,7 +34,6 @@ func main() {
 		log.Println("Database initialized successfully")
 	}
 
-	//ctx := context.Background()
 	database.AutoMigrate(&models.User{}, &models.Subscription{})
 
 	// if err := yookassa.Init(); err != nil {
@@ -44,7 +43,6 @@ func main() {
 	// Определяем роутер Gin + задаем свой формат логов
 	r := gin.New()
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		// your custom format
 		return fmt.Sprintf("%s - [%s] \"%s %s %s %d %s \"%s\" %s\"\n",
 			param.ClientIP,
 			param.TimeStamp.Format(time.RFC1123),
@@ -76,6 +74,7 @@ func main() {
 	protected.Use(auth)
 	{
 		//protected.POST("/", handlers.ShowInitData)
+		protected.GET("/", handlers.GetProfile)
 		protected.GET("/profile", handlers.GetProfile)
 		protected.POST("/payment/create", handlers.CreatePayment)
 		protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)

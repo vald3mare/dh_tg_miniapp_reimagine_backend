@@ -22,7 +22,7 @@
 
 // 	tgUser := initData.User
 
-// 	// Проверяем, доступна ли БД
+// 	// 	// Проверяем, доступна ли БД
 // 	if db.DB == nil {
 // 		log.Println("WARNING: БД недоступна — возвращаем данные только из Telegram")
 // 		c.JSON(http.StatusOK, gin.H{

@@ -11,7 +11,7 @@ import (
 )
 
 // Глобальная переменная для доступа к БД
-//var DB *gorm.DB
+var DB *gorm.DB
 
 // InitDB подключает к PostgreSQL и применяет миграции
 func InitDB() (*gorm.DB, error) {
@@ -46,5 +46,14 @@ func InitDB() (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	log.Println("PostgreSQL успешно подключена ")
-	return database, nil
+	DB = database
+	return DB, nil
 }
+
+// func GetDB() *gorm.DB {
+// 	DB, err := InitDB()
+// 	if err != nil {
+// 		log.Fatal("Failed to get database connection:", err)
+// 	}
+// 	return DB
+// }
