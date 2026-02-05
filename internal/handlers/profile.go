@@ -42,7 +42,6 @@ func GetProfile(c *gin.Context) {
 			return
 		}
 		fmt.Println("Создан новый пользователь:", newUser)
-		fmt.Println(initData)
 		c.JSON(http.StatusOK, gin.H{"user": newUser})
 		return
 	} else {
@@ -57,7 +56,6 @@ func GetProfile(c *gin.Context) {
 			return
 		}
 		fmt.Println("Пользователь найден:", user)
-		fmt.Println(initData)
 		c.JSON(http.StatusOK, gin.H{"user": user})
 		return
 	}
