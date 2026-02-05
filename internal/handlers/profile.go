@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/db"
@@ -40,12 +41,24 @@ func GetProfile(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать пользователя"})
 			return
 		}
+		fmt.Println("Создан новый пользователь:", newUser)
+		fmt.Println(initData)
 		c.JSON(http.StatusOK, gin.H{"user": newUser})
 		return
-	}
+	} else {
+		user.FirstName = tgUser.FirstName
+		user.LastName = tgUser.LastName
+		user.Username = tgUser.Username
+		user.IsPremium = tgUser.IsPremium
+		user.PhotoURL = tgUser.PhotoURL
 
-	// Возвращаем данные пользователя
-	c.JSON(http.StatusOK, gin.H{
-		"user": user,
-	})
+		if err := db.DB.Save(&user).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить пользователя"})
+			return
+		}
+		fmt.Println("Пользователь найден:", user)
+		fmt.Println(initData)
+		c.JSON(http.StatusOK, gin.H{"user": user})
+		return
+	}
 }
