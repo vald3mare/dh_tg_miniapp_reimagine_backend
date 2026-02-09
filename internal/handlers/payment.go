@@ -54,8 +54,8 @@ type YooKassaPaymentResponse struct {
 const (
 	yookassaAPIURL = "https://api.yookassa.ru/v3/payments"
 	// Тестовые ключи — возьми из личного кабинета YooKassa (раздел "Тестовый магазин")
-	testShopID    = "TEST_SHOP_ID"    // Замени на свой тестовый
-	testSecretKey = "TEST_SECRET_KEY" // Замени на свой тестовый
+	testShopID    = "1271879"                                             // Замени на свой тестовый
+	testSecretKey = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4пше" // Замени на свой тестовый
 )
 
 func CreateTestPayment(db *gorm.DB) gin.HandlerFunc {
