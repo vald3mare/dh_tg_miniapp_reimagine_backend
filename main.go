@@ -93,18 +93,18 @@ func main() {
 		//protected.POST("/", handlers.ShowInitData)
 		protected.GET("/", handlers.GetProfile)
 		protected.GET("/profile", handlers.GetProfile)
-		protected.POST("/payment/create", handlers.CreatePayment)
-		protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
-		protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
-		protected.POST("/payment/:payment_id/capture", handlers.CapturePayment)
+		//protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
+		//protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
+		//protected.POST("/payment/:payment_id/capture", handlers.CapturePayment)
 		//protected.POST("/subscription/cancel", handlers.CancelSubscription)
 	}
 
+	r.POST("/payment/create", handlers.CreateTestPayment(database))
 	r.GET("/catalog", handlers.GetCatalog(database))
 
 	// Вебхуки и платежные редиректы (открытые роуты)
-	r.POST("/webhook/yookassa", handlers.YookassaWebhook)
-	r.GET("/payment/success", handlers.PaymentSuccess)
+	//r.POST("/webhook/yookassa", handlers.YookassaWebhook)
+	//r.GET("/payment/success", handlers.PaymentSuccess)
 
 	// Не защищённый health-check (для Timeweb и мониторинга)
 	r.GET("/health", func(c *gin.Context) {
