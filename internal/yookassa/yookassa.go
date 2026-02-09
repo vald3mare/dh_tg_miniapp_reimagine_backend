@@ -27,8 +27,11 @@ func Init() error {
 	}
 
 	client = yookassa.NewClient(shopID, secretKey)
+	//settingsHandler := yookassa.NewSettingsHandler(client)//
+	//settings, _ := settingsHandler.GetAccountSettings(nil)//
 	paymentHandler = yookassa.NewPaymentHandler(client)
 	log.Println("ЮKassa клиент инициализирован успешно")
+	//log.Prefix(settings)//
 	return nil
 }
 

@@ -12,7 +12,23 @@ import (
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// В main.go, после db.AutoMigrate(&models.CatalogItem{})
+func seedCatalog(db *gorm.DB) {
+	var count int64
+	db.Model(&models.CatalogItem{}).Count(&count)
+	if count == 0 {
+		items := []models.CatalogItem{
+			{Name: "Стрижка собак", Description: "Профессиональная стрижка", Price: 1500, ImageURL: "https://example.com/dog-grooming.jpg", Type: "service"},
+			{Name: "Выгул животных", Description: "Часовая прогулка", Price: 500, ImageURL: "https://example.com/dog-walk.jpg", Type: "service"},
+			{Name: "Корм для собак", Description: "Премиум корм 10кг", Price: 3000, ImageURL: "https://example.com/dog-food.jpg", Type: "product"},
+		}
+		db.Create(&items)
+		fmt.Println("Seed данные добавлены в каталог")
+	}
+}
 
 func main() {
 	// ===== Инициализация переменных окружения =====
@@ -34,7 +50,8 @@ func main() {
 		log.Println("Database initialized successfully")
 	}
 
-	database.AutoMigrate(&models.User{}, &models.Subscription{})
+	database.AutoMigrate(&models.User{}, &models.Subscription{}, &models.CatalogItem{})
+	seedCatalog(database)
 
 	// if err := yookassa.Init(); err != nil {
 	// 	log.Printf("WARNING: Failed to initialize Yookassa: %v", err)
@@ -76,6 +93,7 @@ func main() {
 		//protected.POST("/", handlers.ShowInitData)
 		protected.GET("/", handlers.GetProfile)
 		protected.GET("/profile", handlers.GetProfile)
+		protected.GET("/catalog", handlers.GetCatalog(database))
 		protected.POST("/payment/create", handlers.CreatePayment)
 		protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
 		protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
