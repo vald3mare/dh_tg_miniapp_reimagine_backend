@@ -93,13 +93,14 @@ func main() {
 		//protected.POST("/", handlers.ShowInitData)
 		protected.GET("/", handlers.GetProfile)
 		protected.GET("/profile", handlers.GetProfile)
-		protected.GET("/catalog", handlers.GetCatalog(database))
 		protected.POST("/payment/create", handlers.CreatePayment)
 		protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
 		protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
 		protected.POST("/payment/:payment_id/capture", handlers.CapturePayment)
 		//protected.POST("/subscription/cancel", handlers.CancelSubscription)
 	}
+
+	r.GET("/catalog", handlers.GetCatalog(database))
 
 	// Вебхуки и платежные редиректы (открытые роуты)
 	r.POST("/webhook/yookassa", handlers.YookassaWebhook)
