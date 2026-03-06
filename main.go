@@ -21,9 +21,9 @@ func seedCatalog(db *gorm.DB) {
 	db.Model(&models.CatalogItem{}).Count(&count)
 	if count == 0 {
 		items := []models.CatalogItem{
-			{Name: "Стрижка собак", Description: "Профессиональная стрижка", Price: 1500, ImageURL: "https://example.com/dog-grooming.jpg", Type: "service"},
-			{Name: "Выгул животных", Description: "Часовая прогулка", Price: 500, ImageURL: "https://example.com/dog-walk.jpg", Type: "service"},
-			{Name: "Корм для собак", Description: "Премиум корм 10кг", Price: 3000, ImageURL: "https://example.com/dog-food.jpg", Type: "product"},
+			{Name: "Выгул собак", Description: "Полная забота о вашем питомце во время прогулки: от экипировки до игр и обучения", FullDescription: "Выгульщик приходит домой сам — с экипировкой или использует вашу.\nОдевает собаку, берёт вкусняшки, пакеты, поводки.\nУчитывает возраст, темперамент, повадки, особенности прогулок.", Price: 890, ImageURL: "https://s3.twcstorage.ru/dh-s3-storage/shutterstock_1531627.png", Type: "service"},
+			{Name: "Выгул животных", Description: "Часовая прогулка", FullDescription: "Часовая прогулка с вашим питомцем.\nВключает: кормление, игры.\nЦена за час.", Price: 500, ImageURL: "https://example.com/dog-walk.jpg", Type: "service"},
+			{Name: "Корм для собак", Description: "Премиум корм 10кг", FullDescription: "Премиум корм 10кг.\nСостав: мясо, витамины.\nРекомендации: для взрослых собак.", Price: 3000, ImageURL: "https://example.com/dog-food.jpg", Type: "product"},
 		}
 		db.Create(&items)
 		fmt.Println("Seed данные добавлены в каталог")
@@ -90,21 +90,12 @@ func main() {
 	protected := r.Group("/")
 	protected.Use(auth)
 	{
-		//protected.POST("/", handlers.ShowInitData)
 		protected.GET("/", handlers.GetProfile)
 		protected.GET("/profile", handlers.GetProfile)
-		//protected.GET("/payment/:payment_id", handlers.GetPaymentStatus)
-		//protected.POST("/payment/:payment_id/cancel", handlers.CancelPayment)
-		//protected.POST("/payment/:payment_id/capture", handlers.CapturePayment)
-		//protected.POST("/subscription/cancel", handlers.CancelSubscription)
 	}
 
 	r.POST("/payment/create", handlers.CreateTestPayment(database))
 	r.GET("/catalog", handlers.GetCatalog(database))
-
-	// Вебхуки и платежные редиректы (открытые роуты)
-	//r.POST("/webhook/yookassa", handlers.YookassaWebhook)
-	//r.GET("/payment/success", handlers.PaymentSuccess)
 
 	// Не защищённый health-check (для Timeweb и мониторинга)
 	r.GET("/health", func(c *gin.Context) {

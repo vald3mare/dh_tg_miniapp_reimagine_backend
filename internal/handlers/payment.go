@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models" // Путь к твоей модели CatalogItem
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,20 +19,20 @@ import (
 )
 
 type CreatePaymentRequest struct {
-	ItemID uint `json:"item_id" binding:"required"` // ID товара/услуги из БД
+	ItemID uint `json:"item_id" binding:"required"`
 }
 
-// Структура для body запроса к YooKassa API (по документации https://yookassa.ru/developers/api#create_payment)
 type YooKassaPaymentRequest struct {
-	Amount       YooKassaAmount       `json:"amount"`
-	Confirmation YooKassaConfirmation `json:"confirmation"`
-	Capture      bool                 `json:"capture"`
-	Description  string               `json:"description"`
-	Metadata     map[string]string    `json:"metadata,omitempty"`
+	Amount             YooKassaAmount       `json:"amount"`
+	Confirmation       YooKassaConfirmation `json:"confirmation"`
+	Capture            bool                 `json:"capture"`
+	Description        string               `json:"description"`
+	SaverPaymentMethod bool                 `json:"save_payment_method"`
+	Metadata           map[string]string    `json:"metadata,omitempty"`
 }
 
 type YooKassaAmount struct {
-	Value    string `json:"value"` // Строка с двумя знаками после точки, например "1500.00"
+	Value    string `json:"value"`
 	Currency string `json:"currency"`
 }
 
@@ -41,7 +41,6 @@ type YooKassaConfirmation struct {
 	ReturnURL string `json:"return_url"`
 }
 
-// Структура ответа от YooKassa (упрощённая, нам нужен только confirmation_url)
 type YooKassaPaymentResponse struct {
 	ID           string `json:"id"`
 	Status       string `json:"status"`
@@ -53,9 +52,8 @@ type YooKassaPaymentResponse struct {
 
 const (
 	yookassaAPIURL = "https://api.yookassa.ru/v3/payments"
-	// Тестовые ключи — возьми из личного кабинета YooKassa (раздел "Тестовый магазин")
-	testShopID    = "1271879"                                          // Замени на свой тестовый
-	testSecretKey = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4" // Замени на свой тестовый
+	testShopID     = "1271879"
+	testSecretKey  = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4"
 )
 
 func CreateTestPayment(db *gorm.DB) gin.HandlerFunc {
@@ -66,23 +64,18 @@ func CreateTestPayment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Находим товар/услугу в БД
 		var item models.CatalogItem
 		if err := db.First(&item, req.ItemID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Товар/услуга не найдена"})
 			return
 		}
 
-		// Idempotence-Key — уникальный для каждого запроса
 		idempotencyKey := uuid.New().String()
 
-		// Формируем сумму как строку с двумя знаками
 		amountValue := fmt.Sprintf("%.2f", item.Price)
 
-		// Описание с явной пометкой о тестовом платеже
 		description := fmt.Sprintf("[ТЕСТОВЫЙ ПЛАТЁЖ] Оплата услуги/товара: %s (ID: %d)", item.Name, item.ID)
 
-		// Body запроса
 		paymentReq := YooKassaPaymentRequest{
 			Amount: YooKassaAmount{
 				Value:    amountValue,
@@ -90,14 +83,15 @@ func CreateTestPayment(db *gorm.DB) gin.HandlerFunc {
 			},
 			Confirmation: YooKassaConfirmation{
 				Type:      "redirect",
-				ReturnURL: "https://your-frontend-domain.com/payment-success", // Замени на свою страницу успеха (или Telegram deep link)
+				ReturnURL: "https://your-frontend-domain.com/payment-success",
 			},
-			Capture:     true, // Автозахват (для теста ок)
-			Description: description,
+			Capture:            true,
+			Description:        description,
+			SaverPaymentMethod: true,
 			Metadata: map[string]string{
 				"test_payment": "true",
 				"item_id":      strconv.FormatUint(uint64(item.ID), 10),
-				"user_id":      "test_user", // Потом замени на реальный Telegram ID
+				"user_id":      "test_user",
 			},
 		}
 
