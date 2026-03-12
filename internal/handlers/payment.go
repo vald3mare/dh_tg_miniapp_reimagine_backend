@@ -27,10 +27,10 @@ type CreatePaymentRequest struct {
 }
 
 type yooPaymentRequest struct {
-	Amount       yooAmount       `json:"amount"`
-	Confirmation yooConfirmation `json:"confirmation"`
-	Capture      bool            `json:"capture"`
-	Description  string          `json:"description"`
+	Amount       yooAmount         `json:"amount"`
+	Confirmation yooConfirmation   `json:"confirmation"`
+	Capture      bool              `json:"capture"`
+	Description  string            `json:"description"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
@@ -54,8 +54,8 @@ type yooPaymentResponse struct {
 
 // Webhook payload от ЮKassa
 type webhookPayload struct {
-	Type  string `json:"type"`
-	Event string `json:"event"`
+	Type   string `json:"type"`
+	Event  string `json:"event"`
 	Object struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
@@ -111,8 +111,8 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 		secretKey := os.Getenv("YOOKASSA_SECRET_KEY")
 		if shopID == "" || secretKey == "" {
 			// Временные тестовые значения — вынести в env перед продом
-			shopID = "1271879"
-			secretKey = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4"
+			shopID = "1175785"
+			secretKey = "live_1rqsQYPOLut9UXbyEbcieVuR4WmLey1S2mOxNuntgHo"
 		}
 
 		paymentReq := yooPaymentRequest{
