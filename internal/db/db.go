@@ -41,11 +41,19 @@ func InitDB() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetMaxIdleConns(10)
+	// Timeweb Cloud PostgreSQL обычно лимитирует число соединений.
+	// 25 открытых + 5 idle — разумный баланс для небольшого сервиса.
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
-	log.Println("PostgreSQL успешно подключена ")
+	// Проверяем живое соединение при старте.
+	if err := sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("не удалось пинговать БД: %w", err)
+	}
+
+	log.Println("PostgreSQL успешно подключена")
 	DB = database
 	return DB, nil
 }

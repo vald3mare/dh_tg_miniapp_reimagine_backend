@@ -6,7 +6,7 @@ import (
 
 type User struct {
 	gorm.Model // Embed для ID, CreatedAt, UpdatedAt, DeletedAt
-	TelegramID uint
+	TelegramID uint `gorm:"uniqueIndex;not null"`
 	FirstName  string
 	LastName   string
 	Username   string

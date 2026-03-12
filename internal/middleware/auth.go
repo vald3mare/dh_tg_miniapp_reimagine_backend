@@ -27,18 +27,13 @@ func CtxInitData(ctx context.Context) (initdata.InitData, bool) {
 	return initData, ok
 }
 
-// Middleware авторизации по заголовку Authorization: tma <initDataRaw>
-// Именно это middleware нужно использовать для аутентификации пользователей
+// AuthMiddleware валидирует заголовок Authorization: tma <initDataRaw>.
+// Init data считается валидной в течение 1 часа с момента создания.
 func AuthMiddleware(token string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		// We expect passing init data in the Authorization header in the following format:
-		// <auth-type> <auth-data>
-		// <auth-type> must be "tma", and <auth-data> is Telegram Mini Apps init data.
-		authParts := strings.Split(context.GetHeader("authorization"), " ")
+	return func(c *gin.Context) {
+		authParts := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
 		if len(authParts) != 2 {
-			context.AbortWithStatusJSON(401, map[string]any{
-				"message": "Unauthorized",
-			})
+			c.AbortWithStatusJSON(401, gin.H{"message": "Unauthorized"})
 			return
 		}
 
@@ -47,27 +42,24 @@ func AuthMiddleware(token string) gin.HandlerFunc {
 
 		switch authType {
 		case "tma":
-			// Validate init data. We consider init data sign valid for 1 hour from their
-			// creation moment.
 			if err := initdata.Validate(authData, token, time.Hour); err != nil {
-				context.AbortWithStatusJSON(401, map[string]any{
-					"message": err.Error(),
-				})
+				c.AbortWithStatusJSON(401, gin.H{"message": err.Error()})
 				return
 			}
 
-			// Parse init data. We will surely need it in the future.
 			initData, err := initdata.Parse(authData)
 			if err != nil {
-				context.AbortWithStatusJSON(500, map[string]any{
-					"message": err.Error(),
-				})
+				c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 				return
 			}
 
-			context.Request = context.Request.WithContext(
-				WithInitData(context.Request.Context(), initData),
+			c.Request = c.Request.WithContext(
+				WithInitData(c.Request.Context(), initData),
 			)
+			c.Next()
+
+		default:
+			c.AbortWithStatusJSON(401, gin.H{"message": "unsupported auth type"})
 		}
 	}
 }

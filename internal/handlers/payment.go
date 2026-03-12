@@ -1,4 +1,3 @@
-// handlers/payment.go
 package handlers
 
 import (
@@ -8,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -18,142 +20,227 @@ import (
 	"gorm.io/gorm"
 )
 
+// ─── Типы запроса/ответа ──────────────────────────────────────────────────────
+
 type CreatePaymentRequest struct {
 	ItemID uint `json:"item_id" binding:"required"`
 }
 
-type YooKassaPaymentRequest struct {
-	Amount             YooKassaAmount       `json:"amount"`
-	Confirmation       YooKassaConfirmation `json:"confirmation"`
-	Capture            bool                 `json:"capture"`
-	Description        string               `json:"description"`
-	SaverPaymentMethod bool                 `json:"save_payment_method"`
-	Metadata           map[string]string    `json:"metadata,omitempty"`
+type yooPaymentRequest struct {
+	Amount       yooAmount       `json:"amount"`
+	Confirmation yooConfirmation `json:"confirmation"`
+	Capture      bool            `json:"capture"`
+	Description  string          `json:"description"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
-type YooKassaAmount struct {
+type yooAmount struct {
 	Value    string `json:"value"`
 	Currency string `json:"currency"`
 }
 
-type YooKassaConfirmation struct {
-	Type      string `json:"type"` // "redirect"
+type yooConfirmation struct {
+	Type      string `json:"type"`
 	ReturnURL string `json:"return_url"`
 }
 
-type YooKassaPaymentResponse struct {
+type yooPaymentResponse struct {
 	ID           string `json:"id"`
 	Status       string `json:"status"`
 	Confirmation struct {
-		Type            string `json:"type"`
 		ConfirmationURL string `json:"confirmation_url"`
 	} `json:"confirmation"`
 }
 
-const (
-	yookassaAPIURL = "https://api.yookassa.ru/v3/payments"
-	testShopID     = "1271879"
-	testSecretKey  = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4"
-)
+// Webhook payload от ЮKassa
+type webhookPayload struct {
+	Type  string `json:"type"`
+	Event string `json:"event"`
+	Object struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	} `json:"object"`
+}
 
-func CreateTestPayment(db *gorm.DB) gin.HandlerFunc {
+const yookassaAPIURL = "https://api.yookassa.ru/v3/payments"
+
+// ─── Хендлеры ─────────────────────────────────────────────────────────────────
+
+// CreatePayment создаёт платёж в ЮKassa, сохраняет запись в БД и возвращает
+// ссылку на оплату фронтенду. Маршрут защищён — требует Authorization: tma ...
+func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Получаем авторизованного пользователя из контекста
+		initData, ok := middleware.CtxInitData(c.Request.Context())
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+			return
+		}
+
+		// Ищем пользователя в БД по Telegram ID
+		var user models.User
+		if err := db.Where("telegram_id = ?", uint(initData.User.ID)).First(&user).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Пользователь не найден, сначала откройте профиль"})
+			return
+		}
+
+		// Парсим тело запроса
 		var req CreatePaymentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
 			return
 		}
 
+		// Ищем товар/услугу
 		var item models.CatalogItem
 		if err := db.First(&item, req.ItemID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Товар/услуга не найдена"})
 			return
 		}
 
+		// Формируем описание и ключ идемпотентности
+		description := fmt.Sprintf("Оплата услуги: %s (ID: %d)", item.Name, item.ID)
 		idempotencyKey := uuid.New().String()
 
-		amountValue := fmt.Sprintf("%.2f", item.Price)
+		returnURL := os.Getenv("PAYMENT_RETURN_URL")
+		if returnURL == "" {
+			returnURL = "https://t.me/" // fallback — замените на реальный URL в env
+		}
 
-		description := fmt.Sprintf("[ТЕСТОВЫЙ ПЛАТЁЖ] Оплата услуги/товара: %s (ID: %d)", item.Name, item.ID)
+		shopID := os.Getenv("YOOKASSA_SHOP_ID")
+		secretKey := os.Getenv("YOOKASSA_SECRET_KEY")
+		if shopID == "" || secretKey == "" {
+			// Временные тестовые значения — вынести в env перед продом
+			shopID = "1271879"
+			secretKey = "test_WmGjVYt5HV9ZR9vUqUidTE6H7HXVISNHmKggbRSDqP4"
+		}
 
-		paymentReq := YooKassaPaymentRequest{
-			Amount: YooKassaAmount{
-				Value:    amountValue,
+		paymentReq := yooPaymentRequest{
+			Amount: yooAmount{
+				Value:    fmt.Sprintf("%.2f", item.Price),
 				Currency: "RUB",
 			},
-			Confirmation: YooKassaConfirmation{
+			Confirmation: yooConfirmation{
 				Type:      "redirect",
-				ReturnURL: "https://your-frontend-domain.com/payment-success",
+				ReturnURL: returnURL,
 			},
-			Capture:            true,
-			Description:        description,
-			SaverPaymentMethod: true,
+			Capture:     true,
+			Description: description,
 			Metadata: map[string]string{
-				"test_payment": "true",
-				"item_id":      strconv.FormatUint(uint64(item.ID), 10),
-				"user_id":      "test_user",
+				"user_id": strconv.FormatUint(uint64(user.ID), 10),
+				"item_id": strconv.FormatUint(uint64(item.ID), 10),
 			},
 		}
 
-		// Marshal в JSON
 		bodyBytes, err := json.Marshal(paymentReq)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка формирования запроса"})
 			return
 		}
 
-		// Создаём HTTP-запрос
 		httpReq, err := http.NewRequestWithContext(context.Background(), "POST", yookassaAPIURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания HTTP-запроса"})
 			return
 		}
-
-		// Headers
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Idempotence-Key", idempotencyKey)
+		httpReq.Header.Set("Authorization", "Basic "+
+			base64.StdEncoding.EncodeToString([]byte(shopID+":"+secretKey)))
 
-		// Basic Auth: base64(shopId:secretKey)
-		auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", testShopID, testSecretKey)))
-		httpReq.Header.Set("Authorization", "Basic "+auth)
-
-		// Выполняем запрос
-		client := &http.Client{}
-		resp, err := client.Do(httpReq)
+		resp, err := http.DefaultClient.Do(httpReq)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка связи с YooKassa", "details": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка связи с ЮKassa", "details": err.Error()})
 			return
 		}
 		defer resp.Body.Close()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка чтения ответа YooKassa"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка чтения ответа ЮKassa"})
 			return
 		}
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error":  "YooKassa вернула ошибку",
+				"error":  "ЮKassa вернула ошибку",
 				"status": resp.StatusCode,
 				"body":   string(respBody),
 			})
 			return
 		}
 
-		// Парсим ответ
-		var paymentResp YooKassaPaymentResponse
-		if err := json.Unmarshal(respBody, &paymentResp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга ответа YooKassa"})
+		var yooResp yooPaymentResponse
+		if err := json.Unmarshal(respBody, &yooResp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга ответа ЮKassa"})
 			return
 		}
 
-		// Возвращаем фронту URL для оплаты
+		// Сохраняем платёж в БД
+		payment := models.Payment{
+			UserID:      user.ID,
+			ItemID:      item.ID,
+			YooKassaID:  yooResp.ID,
+			Amount:      item.Price,
+			Currency:    "RUB",
+			Status:      yooResp.Status,
+			Description: description,
+		}
+		if err := db.Create(&payment).Error; err != nil {
+			// Не фатально для пользователя — ссылку всё равно вернём,
+			// но логируем, чтобы не потерять платёж.
+			log.Printf("WARN: не удалось сохранить платёж %s в БД: %v", yooResp.ID, err)
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"payment_id":       paymentResp.ID,
-			"confirmation_url": paymentResp.Confirmation.ConfirmationURL,
-			"status":           paymentResp.Status,
-			"test_mode":        true,
+			"payment_id":       yooResp.ID,
+			"confirmation_url": yooResp.Confirmation.ConfirmationURL,
+			"status":           yooResp.Status,
 		})
+	}
+}
+
+// HandlePaymentWebhook обрабатывает уведомления от ЮKassa об изменении статуса платежа.
+// Маршрут публичный — ЮKassa сама вызывает этот endpoint.
+// TODO: добавить проверку IP-адресов ЮKassa для безопасности.
+func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Не удалось прочитать тело запроса"})
+			return
+		}
+
+		var payload webhookPayload
+		if err := json.Unmarshal(body, &payload); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат webhook"})
+			return
+		}
+
+		log.Printf("Webhook: event=%s payment_id=%s status=%s",
+			payload.Event, payload.Object.ID, payload.Object.Status)
+
+		// Ищем платёж в БД
+		var payment models.Payment
+		if err := db.Where("yoo_kassa_id = ?", payload.Object.ID).First(&payment).Error; err != nil {
+			// Платёж не найден — возможно создан вне системы, просто логируем.
+			// Возвращаем 200, чтобы ЮKassa не повторяла запрос.
+			log.Printf("Webhook: платёж %s не найден в БД", payload.Object.ID)
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			return
+		}
+
+		// Обновляем статус платежа
+		if err := db.Model(&payment).Update("status", payload.Object.Status).Error; err != nil {
+			log.Printf("Webhook: не удалось обновить статус платежа %s: %v", payment.YooKassaID, err)
+		}
+
+		if payload.Object.Status == "succeeded" {
+			log.Printf("Webhook: платёж %s успешно оплачен (user_id=%d, item_id=%d)",
+				payment.YooKassaID, payment.UserID, payment.ItemID)
+			// TODO: активировать подписку если item.Type == "subscription"
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
 }
