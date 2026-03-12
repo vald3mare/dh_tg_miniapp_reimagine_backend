@@ -11,6 +11,16 @@ import (
 	"gorm.io/gorm"
 )
 
+func resolveRole(telegramID uint, currentRole string) string {
+	if middleware.IsAdminTelegramID(telegramID) {
+		return "admin"
+	}
+	if currentRole != "" {
+		return currentRole
+	}
+	return "customer"
+}
+
 func GetProfile(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		initData, ok := middleware.CtxInitData(c.Request.Context())
@@ -37,24 +47,25 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 				Username:   tgUser.Username,
 				IsPremium:  tgUser.IsPremium,
 				PhotoURL:   tgUser.PhotoURL,
+				Role:       resolveRole(uint(tgUser.ID), "customer"),
 			}
 			if err := db.Create(&newUser).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать пользователя"})
 				return
 			}
-			log.Printf("Создан новый пользователь TelegramID=%d", newUser.TelegramID)
+			log.Printf("Создан новый пользователь TelegramID=%d role=%s", newUser.TelegramID, newUser.Role)
 			c.JSON(http.StatusOK, gin.H{"user": newUser})
 			return
 		}
 
-		// Пользователь найден — обновляем только изменяемые поля профиля Telegram.
-		// Используем Updates (не Save) чтобы не затирать поля вроде подписки.
+		// Обновляем Telegram-поля и при необходимости роль (если стал админом)
 		updates := map[string]any{
 			"first_name": tgUser.FirstName,
 			"last_name":  tgUser.LastName,
 			"username":   tgUser.Username,
 			"is_premium": tgUser.IsPremium,
 			"photo_url":  tgUser.PhotoURL,
+			"role":       resolveRole(uint(tgUser.ID), user.Role),
 		}
 		if err := db.Model(&user).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить пользователя"})

@@ -1,0 +1,93 @@
+package handlers
+
+import (
+	"net/http"
+
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
+	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+// GetAchievements — GET /executor/achievements, защищённый
+func GetAchievements(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		initData, ok := middleware.CtxInitData(c.Request.Context())
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
+			return
+		}
+
+		var user models.User
+		if err := db.Where("telegram_id = ?", uint(initData.User.ID)).First(&user).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+			return
+		}
+
+		// Все ачивки
+		var allAchievements []models.Achievement
+		if err := db.Find(&allAchievements).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить ачивки"})
+			return
+		}
+
+		// Полученные ачивки пользователя
+		var userAchievements []models.UserAchievement
+		if err := db.Where("user_id = ?", user.ID).Preload("Achievement").Find(&userAchievements).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить ачивки пользователя"})
+			return
+		}
+
+		earnedMap := make(map[uint]models.UserAchievement)
+		for _, ua := range userAchievements {
+			earnedMap[ua.AchievementID] = ua
+		}
+
+		type AchievementResponse struct {
+			models.Achievement
+			Earned   bool   `json:"earned"`
+			EarnedAt string `json:"earned_at,omitempty"`
+		}
+
+		result := make([]AchievementResponse, 0, len(allAchievements))
+		for _, a := range allAchievements {
+			ar := AchievementResponse{Achievement: a}
+			if ua, ok := earnedMap[a.ID]; ok {
+				ar.Earned = true
+				ar.EarnedAt = ua.CreatedAt.Format("2006-01-02")
+			}
+			result = append(result, ar)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"achievements":     result,
+			"orders_completed": user.OrdersCompleted,
+			"rating":           user.Rating,
+		})
+	}
+}
+
+// CheckAndGrantAchievements — вызывается после завершения заказа
+func CheckAndGrantAchievements(db *gorm.DB, user *models.User) {
+	var allAchievements []models.Achievement
+	db.Where("condition_type = ?", "orders_completed").Find(&allAchievements)
+
+	for _, a := range allAchievements {
+		if user.OrdersCompleted < a.Threshold {
+			continue
+		}
+		// Проверяем, не выдана ли уже
+		var count int64
+		db.Model(&models.UserAchievement{}).
+			Where("user_id = ? AND achievement_id = ?", user.ID, a.ID).
+			Count(&count)
+		if count > 0 {
+			continue
+		}
+		db.Create(&models.UserAchievement{
+			UserID:        user.ID,
+			AchievementID: a.ID,
+		})
+	}
+}

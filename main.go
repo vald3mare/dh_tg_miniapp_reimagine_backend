@@ -19,6 +19,27 @@ import (
 	"gorm.io/gorm"
 )
 
+func seedAchievements(db *gorm.DB) {
+	var count int64
+	db.Model(&models.Achievement{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	achievements := []models.Achievement{
+		{Key: "first_order", Name: "Первый шаг", Description: "Выполните первый заказ", IconEmoji: "🐾", ConditionType: "orders_completed", Threshold: 1},
+		{Key: "five_orders", Name: "Опытный", Description: "Выполните 5 заказов", IconEmoji: "⭐", ConditionType: "orders_completed", Threshold: 5},
+		{Key: "ten_orders", Name: "Профессионал", Description: "Выполните 10 заказов", IconEmoji: "🏆", ConditionType: "orders_completed", Threshold: 10},
+		{Key: "verified", Name: "Проверенный", Description: "Пройдите верификацию", IconEmoji: "✅", ConditionType: "manual", Threshold: 0},
+	}
+
+	if err := db.Create(&achievements).Error; err != nil {
+		log.Printf("WARN: не удалось добавить seed-данные ачивок: %v", err)
+		return
+	}
+	fmt.Println("Seed: добавлено 4 ачивки")
+}
+
 func seedCatalog(db *gorm.DB) {
 	var count int64
 	db.Model(&models.CatalogItem{}).Count(&count)
@@ -98,11 +119,15 @@ func main() {
 		&models.Subscription{},
 		&models.CatalogItem{},
 		&models.Payment{},
+		&models.Order{},
+		&models.Achievement{},
+		&models.UserAchievement{},
 	); err != nil {
 		log.Fatalf("AutoMigrate завершился с ошибкой: %v", err)
 	}
 
 	seedCatalog(database)
+	seedAchievements(database)
 
 	// ── Роутер ────────────────────────────────────────────────────────────────
 	r := gin.New()
@@ -122,7 +147,7 @@ func main() {
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"*"},
-		AllowMethods:  []string{"GET", "POST", "OPTIONS"},
+		AllowMethods:  []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:  []string{"Authorization", "Content-Type"},
 		MaxAge:        300,
 	}))
@@ -132,6 +157,8 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	r.GET("/catalog", handlers.GetCatalog(database))
+	r.GET("/executor/orders", handlers.GetOpenOrders(database))
+	r.POST("/orders", handlers.CreateOrder(database))
 
 	// Webhook от ЮKassa — публичный, вызывается их серверами
 	r.POST("/payment/webhook", handlers.HandlePaymentWebhook(database))
@@ -143,6 +170,35 @@ func main() {
 	{
 		protected.GET("/profile", handlers.GetProfile(database))
 		protected.POST("/payment/create", handlers.CreatePayment(database))
+		protected.POST("/profile/role", handlers.SetRole(database))
+		protected.POST("/executor/orders/:id/accept", handlers.AcceptOrder(database))
+		protected.GET("/executor/orders/my", handlers.GetMyOrders(database))
+		protected.GET("/executor/achievements", handlers.GetAchievements(database))
+	}
+
+	// ── Админ-маршруты (tma auth + role=admin) ────────────────────────────────
+	adminGroup := r.Group("/admin")
+	adminGroup.Use(auth)
+	adminGroup.Use(middleware.AdminOnly(database))
+	{
+		adminGroup.GET("/stats", handlers.AdminGetStats(database))
+
+		adminGroup.GET("/catalog", handlers.AdminListCatalog(database))
+		adminGroup.POST("/catalog", handlers.AdminCreateCatalogItem(database))
+		adminGroup.PUT("/catalog/:id", handlers.AdminUpdateCatalogItem(database))
+		adminGroup.DELETE("/catalog/:id", handlers.AdminDeleteCatalogItem(database))
+
+		adminGroup.GET("/achievements", handlers.AdminListAchievements(database))
+		adminGroup.POST("/achievements", handlers.AdminCreateAchievement(database))
+		adminGroup.PUT("/achievements/:id", handlers.AdminUpdateAchievement(database))
+		adminGroup.DELETE("/achievements/:id", handlers.AdminDeleteAchievement(database))
+
+		adminGroup.GET("/users", handlers.AdminListUsers(database))
+		adminGroup.PUT("/users/:id/role", handlers.AdminSetUserRole(database))
+		adminGroup.POST("/users/:id/achievement", handlers.AdminGrantAchievement(database))
+
+		adminGroup.GET("/orders", handlers.AdminListOrders(database))
+		adminGroup.PUT("/orders/:id/status", handlers.AdminUpdateOrderStatus(database))
 	}
 
 	// ── HTTP-сервер с graceful shutdown ───────────────────────────────────────
