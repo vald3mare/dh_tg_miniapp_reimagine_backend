@@ -12,8 +12,9 @@ type User struct {
 	Username        string  `json:"username"`
 	IsPremium       bool    `json:"is_premium"`
 	PhotoURL        string  `json:"photo_url"`
-	Role            string  `gorm:"default:'customer'" json:"role"`
-	Rating          float64 `gorm:"default:0" json:"rating"`
+	Role            string   `gorm:"default:'customer'" json:"role"`
+	Roles           []string `gorm:"serializer:json" json:"roles"`
+	Rating          float64  `gorm:"default:0" json:"rating"`
 	OrdersCompleted int     `gorm:"default:0" json:"orders_completed"`
 
 	Subscription     *Subscription     `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"-"`

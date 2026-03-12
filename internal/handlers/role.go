@@ -11,6 +11,8 @@ import (
 )
 
 // SetRole — POST /profile/role, защищённый
+// Добавляет роль в массив roles пользователя (не заменяет).
+// Для администраторов — роль не меняется.
 func SetRole(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		initData, ok := middleware.CtxInitData(c.Request.Context())
@@ -38,11 +40,28 @@ func SetRole(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Администратору роль не меняем (у него уже есть все роли)
+		if user.Role == "admin" {
+			c.JSON(http.StatusOK, gin.H{"role": user.Role, "roles": user.Roles})
+			return
+		}
+
+		// Добавляем роль в массив (если ещё нет), обновляем основную роль
+		newRoles := user.Roles
+		if !containsStr(newRoles, body.Role) {
+			newRoles = append(newRoles, body.Role)
+		}
+		if len(newRoles) == 0 {
+			newRoles = []string{body.Role}
+		}
+
 		if err := db.Model(&user).Update("role", body.Role).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить роль"})
 			return
 		}
+		user.Roles = newRoles
+		db.Model(&user).Update("roles", user.Roles)
 
-		c.JSON(http.StatusOK, gin.H{"role": user.Role})
+		c.JSON(http.StatusOK, gin.H{"role": body.Role, "roles": newRoles})
 	}
 }
