@@ -72,6 +72,8 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Перечитываем, чтобы в ответе были актуальные поля (в т.ч. role)
+		db.Where("telegram_id = ?", uint(tgUser.ID)).First(&user)
 		c.JSON(http.StatusOK, gin.H{"user": user})
 	}
 }

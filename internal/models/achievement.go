@@ -4,17 +4,17 @@ import "gorm.io/gorm"
 
 type Achievement struct {
 	gorm.Model
-	Key           string `gorm:"uniqueIndex;not null"`
-	Name          string
-	Description   string
-	IconEmoji     string
-	ConditionType string // orders_completed, manual
-	Threshold     int
+	Key           string `gorm:"uniqueIndex;not null" json:"key"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	IconEmoji     string `json:"icon_emoji"`
+	ConditionType string `json:"condition_type"`
+	Threshold     int    `json:"threshold"`
 }
 
 type UserAchievement struct {
 	gorm.Model
-	UserID        uint        `gorm:"index;not null"`
-	AchievementID uint        `gorm:"index;not null"`
-	Achievement   Achievement `gorm:"foreignKey:AchievementID"`
+	UserID        uint        `gorm:"index;not null" json:"user_id"`
+	AchievementID uint        `gorm:"index;not null" json:"achievement_id"`
+	Achievement   Achievement `gorm:"foreignKey:AchievementID" json:"achievement"`
 }

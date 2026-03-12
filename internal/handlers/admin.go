@@ -35,8 +35,8 @@ func AdminGetStats(db *gorm.DB) gin.HandlerFunc {
 
 		// Топ услуг по платежам
 		type ServiceStat struct {
-			Name  string
-			Count int64
+			Name  string  `json:"name"`
+			Count int64   `json:"count"`
 		}
 		var topServices []ServiceStat
 		db.Raw(`
@@ -46,6 +46,32 @@ func AdminGetStats(db *gorm.DB) gin.HandlerFunc {
 			WHERE p.status = 'succeeded' AND p.deleted_at IS NULL
 			GROUP BY ci.name ORDER BY count DESC LIMIT 5
 		`).Scan(&topServices)
+
+		// Общая выручка
+		var totalRevenue float64
+		db.Model(&models.Payment{}).
+			Where("status = ?", "succeeded").
+			Select("COALESCE(SUM(amount), 0)").
+			Scan(&totalRevenue)
+
+		// Последние 20 платежей
+		type PaymentRow struct {
+			ID          uint    `json:"id"`
+			Amount      float64 `json:"amount"`
+			Currency    string  `json:"currency"`
+			Status      string  `json:"status"`
+			Description string  `json:"description"`
+			CreatedAt   string  `json:"created_at"`
+		}
+		var recentPayments []PaymentRow
+		db.Raw(`
+			SELECT p.id, p.amount, p.currency, p.status, p.description,
+			       TO_CHAR(p.created_at, 'DD.MM.YYYY HH24:MI') as created_at
+			FROM payments p
+			WHERE p.deleted_at IS NULL
+			ORDER BY p.created_at DESC
+			LIMIT 20
+		`).Scan(&recentPayments)
 
 		c.JSON(http.StatusOK, gin.H{
 			"users": gin.H{
@@ -60,13 +86,15 @@ func AdminGetStats(db *gorm.DB) gin.HandlerFunc {
 				"done":     ordersDone,
 			},
 			"payments": gin.H{
-				"total":     paymentsTotal,
-				"succeeded": paymentsSucceeded,
+				"total":         paymentsTotal,
+				"succeeded":     paymentsSucceeded,
+				"total_revenue": totalRevenue,
 			},
 			"catalog": gin.H{
 				"total": catalogTotal,
 			},
-			"top_services": topServices,
+			"top_services":    topServices,
+			"recent_payments": recentPayments,
 		})
 	}
 }
