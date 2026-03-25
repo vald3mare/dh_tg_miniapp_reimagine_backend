@@ -16,6 +16,7 @@ import (
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 )
 
@@ -103,6 +104,14 @@ func main() {
 		log.Fatal("BOT_TOKEN environment variable is not set")
 	}
 
+	// Предупреждения для опциональных, но важных переменных
+	if os.Getenv("YOOKASSA_SHOP_ID") == "" || os.Getenv("YOOKASSA_SECRET_KEY") == "" {
+		log.Println("WARN: YOOKASSA_SHOP_ID или YOOKASSA_SECRET_KEY не заданы — платежи недоступны")
+	}
+	if os.Getenv("ORDERS_API_KEY") == "" && os.Getenv("ORDERS_AUTH_DISABLED") != "true" {
+		log.Println("WARN: ORDERS_API_KEY не задан и ORDERS_AUTH_DISABLED != true — POST /orders будет отклонять все запросы")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
@@ -146,11 +155,15 @@ func main() {
 	r.Use(gin.Recovery())
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:  []string{"*"},
-		AllowMethods:  []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:  []string{"Authorization", "Content-Type"},
-		MaxAge:        300,
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{"Authorization", "Content-Type"},
+		MaxAge:       300,
 	}))
+
+	// ── Rate limiting: 120 req/min на IP, burst до 20 ────────────────────────
+	rl := middleware.NewRateLimiter(rate.Every(time.Minute/120), 20)
+	r.Use(rl.Middleware())
 
 	// ── Публичные маршруты ────────────────────────────────────────────────────
 	r.GET("/health", func(c *gin.Context) {
@@ -163,17 +176,25 @@ func main() {
 	// Webhook от ЮKassa — публичный, вызывается их серверами
 	r.POST("/payment/webhook", handlers.HandlePaymentWebhook(database))
 
-	// ── Защищённые маршруты (требуют Authorization: tma ...) ──────────────────
 	auth := middleware.AuthMiddleware(token)
+
+	// ── Маршруты с TMA-авторизацией (/profile создаёт юзера, LoadUser не нужен)
 	protected := r.Group("/")
 	protected.Use(auth)
 	{
 		protected.GET("/profile", handlers.GetProfile(database))
-		protected.POST("/payment/create", handlers.CreatePayment(database))
-		protected.POST("/profile/role", handlers.SetRole(database))
-		protected.POST("/executor/orders/:id/accept", handlers.AcceptOrder(database))
-		protected.GET("/executor/orders/my", handlers.GetMyOrders(database))
-		protected.GET("/executor/achievements", handlers.GetAchievements(database))
+	}
+
+	// ── Маршруты с TMA-авторизацией + LoadUser (юзер должен существовать) ────
+	userProtected := r.Group("/")
+	userProtected.Use(auth)
+	userProtected.Use(middleware.LoadUser(database))
+	{
+		userProtected.POST("/payment/create", handlers.CreatePayment(database))
+		userProtected.POST("/profile/role", handlers.SetRole(database))
+		userProtected.POST("/executor/orders/:id/accept", handlers.AcceptOrder(database))
+		userProtected.GET("/executor/orders/my", handlers.GetMyOrders(database))
+		userProtected.GET("/executor/achievements", handlers.GetAchievements(database))
 	}
 
 	// ── Админ-маршруты (tma auth + role=admin) ────────────────────────────────

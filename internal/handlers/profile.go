@@ -76,26 +76,19 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Обновляем Telegram-поля и при необходимости роль/roles (если стал админом)
+		// Обновляем все поля разом через Save — один UPDATE вместо трёх
 		newRole, newRoles := resolveRoles(uint(tgUser.ID), user.Role, user.Roles)
-		updates := map[string]any{
-			"first_name": tgUser.FirstName,
-			"last_name":  tgUser.LastName,
-			"username":   tgUser.Username,
-			"is_premium": tgUser.IsPremium,
-			"photo_url":  tgUser.PhotoURL,
-			"role":       newRole,
-		}
-		if err := db.Model(&user).Updates(updates).Error; err != nil {
+		user.FirstName = tgUser.FirstName
+		user.LastName = tgUser.LastName
+		user.Username = tgUser.Username
+		user.IsPremium = tgUser.IsPremium
+		user.PhotoURL = tgUser.PhotoURL
+		user.Role = newRole
+		user.Roles = newRoles
+		if err := db.Save(&user).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить пользователя"})
 			return
 		}
-		// Roles обновляем отдельно (GORM serializer)
-		user.Roles = newRoles
-		db.Model(&user).Update("roles", user.Roles)
-
-		// Перечитываем, чтобы в ответе были актуальные поля (в т.ч. role, roles)
-		db.Where("telegram_id = ?", uint(tgUser.ID)).First(&user)
 		c.JSON(http.StatusOK, gin.H{"user": user})
 	}
 }

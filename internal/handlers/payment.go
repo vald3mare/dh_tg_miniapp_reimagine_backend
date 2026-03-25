@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
@@ -23,7 +25,7 @@ import (
 // ─── Типы запроса/ответа ──────────────────────────────────────────────────────
 
 type CreatePaymentRequest struct {
-	ItemID uint `json:"item_id" binding:"required"`
+	ItemID uint `json:"item_id" binding:"required,gt=0"`
 }
 
 type yooPaymentRequest struct {
@@ -64,56 +66,68 @@ type webhookPayload struct {
 
 const yookassaAPIURL = "https://api.yookassa.ru/v3/payments"
 
+// IP-диапазоны серверов ЮKassa (https://yookassa.ru/developers/using-api/webhooks)
+var yookassaCIDRs = []string{
+	"185.71.76.0/27",
+	"185.71.77.0/27",
+	"77.75.153.0/25",
+	"77.75.154.128/25",
+	"2a02:5180::/32",
+}
+
+// isAllowedWebhookIP проверяет, входит ли IP в диапазоны ЮKassa.
+func isAllowedWebhookIP(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, cidr := range yookassaCIDRs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err == nil && network.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── Хендлеры ─────────────────────────────────────────────────────────────────
 
 // CreatePayment создаёт платёж в ЮKassa, сохраняет запись в БД и возвращает
 // ссылку на оплату фронтенду. Маршрут защищён — требует Authorization: tma ...
 func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Получаем авторизованного пользователя из контекста
-		initData, ok := middleware.CtxInitData(c.Request.Context())
+		user, ok := middleware.CtxUser(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
 			return
 		}
 
-		// Ищем пользователя в БД по Telegram ID
-		var user models.User
-		if err := db.Where("telegram_id = ?", uint(initData.User.ID)).First(&user).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Пользователь не найден, сначала откройте профиль"})
-			return
-		}
-
-		// Парсим тело запроса
 		var req CreatePaymentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
 			return
 		}
 
-		// Ищем товар/услугу
 		var item models.CatalogItem
 		if err := db.First(&item, req.ItemID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Товар/услуга не найдена"})
 			return
 		}
 
-		// Формируем описание и ключ идемпотентности
-		description := fmt.Sprintf("Оплата услуги: %s (ID: %d)", item.Name, item.ID)
-		idempotencyKey := uuid.New().String()
-
-		returnURL := os.Getenv("PAYMENT_RETURN_URL")
-		if returnURL == "" {
-			returnURL = "https://t.me/" // fallback — замените на реальный URL в env
-		}
-
 		shopID := os.Getenv("YOOKASSA_SHOP_ID")
 		secretKey := os.Getenv("YOOKASSA_SECRET_KEY")
 		if shopID == "" || secretKey == "" {
-			// Временные тестовые значения — вынести в env перед продом
-			shopID = "1175785"
-			secretKey = "live_1rqsQYPOLut9UXbyEbcieVuR4WmLey1S2mOxNuntgHo"
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Платёжный сервис не настроен"})
+			return
 		}
+
+		returnURL := os.Getenv("PAYMENT_RETURN_URL")
+		if returnURL == "" {
+			returnURL = "https://t.me/"
+		}
+
+		description := fmt.Sprintf("Оплата услуги: %s (ID: %d)", item.Name, item.ID)
+		idempotencyKey := uuid.New().String()
 
 		paymentReq := yooPaymentRequest{
 			Amount: yooAmount{
@@ -176,7 +190,6 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Сохраняем платёж в БД
 		payment := models.Payment{
 			UserID:      user.ID,
 			ItemID:      item.ID,
@@ -187,8 +200,6 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 			Description: description,
 		}
 		if err := db.Create(&payment).Error; err != nil {
-			// Не фатально для пользователя — ссылку всё равно вернём,
-			// но логируем, чтобы не потерять платёж.
 			log.Printf("WARN: не удалось сохранить платёж %s в БД: %v", yooResp.ID, err)
 		}
 
@@ -201,10 +212,19 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 }
 
 // HandlePaymentWebhook обрабатывает уведомления от ЮKassa об изменении статуса платежа.
-// Маршрут публичный — ЮKassa сама вызывает этот endpoint.
-// TODO: добавить проверку IP-адресов ЮKassa для безопасности.
+// В production (GIN_MODE=release) принимает запросы только с IP-адресов ЮKassa.
 func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Проверяем IP только в production (GIN_MODE=release)
+		if gin.Mode() == gin.ReleaseMode {
+			clientIP := c.ClientIP()
+			if !isAllowedWebhookIP(clientIP) {
+				log.Printf("Webhook: отклонён запрос с IP %s", clientIP)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
+				return
+			}
+		}
+
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Не удалось прочитать тело запроса"})
@@ -220,17 +240,13 @@ func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 		log.Printf("Webhook: event=%s payment_id=%s status=%s",
 			payload.Event, payload.Object.ID, payload.Object.Status)
 
-		// Ищем платёж в БД
 		var payment models.Payment
 		if err := db.Where("yoo_kassa_id = ?", payload.Object.ID).First(&payment).Error; err != nil {
-			// Платёж не найден — возможно создан вне системы, просто логируем.
-			// Возвращаем 200, чтобы ЮKassa не повторяла запрос.
 			log.Printf("Webhook: платёж %s не найден в БД", payload.Object.ID)
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 			return
 		}
 
-		// Обновляем статус платежа
 		if err := db.Model(&payment).Update("status", payload.Object.Status).Error; err != nil {
 			log.Printf("Webhook: не удалось обновить статус платежа %s: %v", payment.YooKassaID, err)
 		}
@@ -238,7 +254,33 @@ func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 		if payload.Object.Status == "succeeded" {
 			log.Printf("Webhook: платёж %s успешно оплачен (user_id=%d, item_id=%d)",
 				payment.YooKassaID, payment.UserID, payment.ItemID)
-			// TODO: активировать подписку если item.Type == "subscription"
+
+			// Активируем подписку, если тип товара — subscription
+			var item models.CatalogItem
+			if err := db.First(&item, payment.ItemID).Error; err == nil && item.Type == "subscription" {
+				now := time.Now()
+				sub := models.Subscription{
+					UserID:    &payment.UserID,
+					Plan:      item.Name,
+					Active:    true,
+					StartDate: now,
+					EndDate:   now.AddDate(0, 1, 0),
+					PaymentID: payment.YooKassaID,
+				}
+				if err := db.Where(models.Subscription{UserID: &payment.UserID}).
+					Assign(models.Subscription{
+						Plan:      sub.Plan,
+						Active:    sub.Active,
+						StartDate: sub.StartDate,
+						EndDate:   sub.EndDate,
+						PaymentID: sub.PaymentID,
+					}).
+					FirstOrCreate(&sub).Error; err != nil {
+					log.Printf("Webhook: не удалось активировать подписку для user_id=%d: %v", payment.UserID, err)
+				} else {
+					log.Printf("Webhook: подписка активирована для user_id=%d до %s", payment.UserID, sub.EndDate.Format("2006-01-02"))
+				}
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

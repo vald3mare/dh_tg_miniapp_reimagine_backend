@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Глобальная переменная для доступа к БД
-var DB *gorm.DB
-
 // InitDB подключает к PostgreSQL и применяет миграции
 func InitDB() (*gorm.DB, error) {
 	host := os.Getenv("DB_HOST")
@@ -41,10 +38,10 @@ func InitDB() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Timeweb Cloud PostgreSQL обычно лимитирует число соединений.
-	// 25 открытых + 5 idle — разумный баланс для небольшого сервиса.
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(5)
+	// 50 открытых + 10 idle: даёт запас при пиковой нагрузке.
+	// Если Timeweb ограничивает соединения — уменьши MaxOpenConns.
+	sqlDB.SetMaxOpenConns(50)
+	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
@@ -54,14 +51,5 @@ func InitDB() (*gorm.DB, error) {
 	}
 
 	log.Println("PostgreSQL успешно подключена")
-	DB = database
-	return DB, nil
+	return database, nil
 }
-
-// func GetDB() *gorm.DB {
-// 	DB, err := InitDB()
-// 	if err != nil {
-// 		log.Fatal("Failed to get database connection:", err)
-// 	}
-// 	return DB
-// }

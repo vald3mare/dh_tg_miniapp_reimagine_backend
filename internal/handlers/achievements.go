@@ -5,7 +5,6 @@ import (
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -13,15 +12,9 @@ import (
 // GetAchievements — GET /executor/achievements, защищённый
 func GetAchievements(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		initData, ok := middleware.CtxInitData(c.Request.Context())
+		user, ok := middleware.CtxUser(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
-			return
-		}
-
-		var user models.User
-		if err := db.Where("telegram_id = ?", uint(initData.User.ID)).First(&user).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 			return
 		}
 
@@ -32,7 +25,6 @@ func GetAchievements(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Полученные ачивки пользователя
 		var userAchievements []models.UserAchievement
 		if err := db.Where("user_id = ?", user.ID).Preload("Achievement").Find(&userAchievements).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить ачивки пользователя"})
