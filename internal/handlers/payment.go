@@ -34,6 +34,7 @@ type yooPaymentRequest struct {
 	Capture      bool              `json:"capture"`
 	Description  string            `json:"description"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+	Receipt      *yooReceipt       `json:"receipt,omitempty"`
 }
 
 type yooAmount struct {
@@ -44,6 +45,28 @@ type yooAmount struct {
 type yooConfirmation struct {
 	Type      string `json:"type"`
 	ReturnURL string `json:"return_url"`
+}
+
+// yooReceipt — данные онлайн-чека (54-ФЗ).
+// Обязательны для продакшн-магазинов с онлайн-кассой.
+// Заполняется если задана переменная RECEIPT_EMAIL в env.
+type yooReceipt struct {
+	Customer yooReceiptCustomer `json:"customer"`
+	Items    []yooReceiptItem   `json:"items"`
+}
+
+type yooReceiptCustomer struct {
+	Email string `json:"email,omitempty"`
+	Phone string `json:"phone,omitempty"`
+}
+
+type yooReceiptItem struct {
+	Description    string    `json:"description"`
+	Quantity       string    `json:"quantity"`
+	Amount         yooAmount `json:"amount"`
+	VatCode        int       `json:"vat_code"`        // 1 = без НДС
+	PaymentMode    string    `json:"payment_mode"`    // full_payment
+	PaymentSubject string    `json:"payment_subject"` // service
 }
 
 type yooPaymentResponse struct {
@@ -129,9 +152,11 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 		description := fmt.Sprintf("Оплата услуги: %s (ID: %d)", item.Name, item.ID)
 		idempotencyKey := uuid.New().String()
 
+		amountStr := fmt.Sprintf("%.2f", item.Price)
+
 		paymentReq := yooPaymentRequest{
 			Amount: yooAmount{
-				Value:    fmt.Sprintf("%.2f", item.Price),
+				Value:    amountStr,
 				Currency: "RUB",
 			},
 			Confirmation: yooConfirmation{
@@ -144,6 +169,23 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 				"user_id": strconv.FormatUint(uint64(user.ID), 10),
 				"item_id": strconv.FormatUint(uint64(item.ID), 10),
 			},
+		}
+
+		// Добавляем чек если задан RECEIPT_EMAIL (обязательно для продакшн-магазина с онлайн-кассой)
+		if receiptEmail := os.Getenv("RECEIPT_EMAIL"); receiptEmail != "" {
+			paymentReq.Receipt = &yooReceipt{
+				Customer: yooReceiptCustomer{Email: receiptEmail},
+				Items: []yooReceiptItem{
+					{
+						Description:    item.Name,
+						Quantity:       "1.00",
+						Amount:         yooAmount{Value: amountStr, Currency: "RUB"},
+						VatCode:        1, // 1 = без НДС
+						PaymentMode:    "full_payment",
+						PaymentSubject: "service",
+					},
+				},
+			}
 		}
 
 		bodyBytes, err := json.Marshal(paymentReq)
