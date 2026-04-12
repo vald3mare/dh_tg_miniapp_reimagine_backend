@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -365,6 +366,19 @@ func AdminGrantAchievement(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось выдать ачивку"})
 			return
 		}
+
+		// Уведомляем пользователя о новой ачивке через бота
+		var achievement models.Achievement
+		if db.First(&achievement, body.AchievementID).Error == nil {
+			var user models.User
+			if db.First(&user, userID).Error == nil {
+				go NotifyUser(user.TelegramID, fmt.Sprintf(
+					"🏆 <b>Новое достижение!</b>\n\n%s <b>%s</b>\n%s",
+					achievement.IconEmoji, achievement.Name, achievement.Description,
+				))
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }

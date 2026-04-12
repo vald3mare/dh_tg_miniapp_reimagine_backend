@@ -131,6 +131,7 @@ func main() {
 		&models.Order{},
 		&models.Achievement{},
 		&models.UserAchievement{},
+		&models.ExecutorApplication{},
 	); err != nil {
 		log.Fatalf("AutoMigrate завершился с ошибкой: %v", err)
 	}
@@ -173,6 +174,10 @@ func main() {
 	r.GET("/executor/orders", handlers.GetOpenOrders(database))
 	r.POST("/orders", handlers.CreateOrder(database))
 
+	// Вызывается Telegram-ботом после заполнения анкеты исполнителя.
+	// Защищён X-API-Key == ORDERS_API_KEY (или ORDERS_AUTH_DISABLED=true).
+	r.POST("/bot/application", handlers.SubmitApplication(database))
+
 	// Webhook от ЮKassa — публичный, вызывается их серверами
 	r.POST("/payment/webhook", handlers.HandlePaymentWebhook(database))
 
@@ -192,8 +197,15 @@ func main() {
 	{
 		userProtected.POST("/payment/create", handlers.CreatePayment(database))
 		userProtected.POST("/profile/role", handlers.SetRole(database))
+
+		// Клиент: создать заявку и посмотреть свои заказы
+		userProtected.POST("/customer/orders", handlers.CustomerCreateOrder(database))
+		userProtected.GET("/orders/my", handlers.GetCustomerOrders(database))
+
+		// Исполнитель: принять заявку, посмотреть свои, обновить статус
 		userProtected.POST("/executor/orders/:id/accept", handlers.AcceptOrder(database))
 		userProtected.GET("/executor/orders/my", handlers.GetMyOrders(database))
+		userProtected.PUT("/executor/orders/:id/status", handlers.ExecutorUpdateOrderStatus(database))
 		userProtected.GET("/executor/achievements", handlers.GetAchievements(database))
 	}
 
@@ -220,6 +232,11 @@ func main() {
 
 		adminGroup.GET("/orders", handlers.AdminListOrders(database))
 		adminGroup.PUT("/orders/:id/status", handlers.AdminUpdateOrderStatus(database))
+
+		// Заявки исполнителей из бота
+		adminGroup.GET("/applications", handlers.AdminListApplications(database))
+		adminGroup.POST("/applications/:id/approve", handlers.AdminApproveApplication(database))
+		adminGroup.POST("/applications/:id/reject", handlers.AdminRejectApplication(database))
 	}
 
 	// ── HTTP-сервер с graceful shutdown ───────────────────────────────────────

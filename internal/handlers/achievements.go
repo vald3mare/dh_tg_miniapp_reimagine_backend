@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
@@ -18,7 +19,6 @@ func GetAchievements(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Все ачивки
 		var allAchievements []models.Achievement
 		if err := db.Find(&allAchievements).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить ачивки"})
@@ -60,7 +60,9 @@ func GetAchievements(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// CheckAndGrantAchievements — вызывается после завершения заказа
+// CheckAndGrantAchievements — вызывается после завершения заказа.
+// Проверяет threshold-ачивки и выдаёт те, которых ещё нет у пользователя.
+// Уведомляет пользователя через бота о каждой новой ачивке.
 func CheckAndGrantAchievements(db *gorm.DB, user *models.User) {
 	var allAchievements []models.Achievement
 	db.Where("condition_type = ?", "orders_completed").Find(&allAchievements)
@@ -69,7 +71,6 @@ func CheckAndGrantAchievements(db *gorm.DB, user *models.User) {
 		if user.OrdersCompleted < a.Threshold {
 			continue
 		}
-		// Проверяем, не выдана ли уже
 		var count int64
 		db.Model(&models.UserAchievement{}).
 			Where("user_id = ? AND achievement_id = ?", user.ID, a.ID).
@@ -81,5 +82,9 @@ func CheckAndGrantAchievements(db *gorm.DB, user *models.User) {
 			UserID:        user.ID,
 			AchievementID: a.ID,
 		})
+		go NotifyUser(user.TelegramID, fmt.Sprintf(
+			"🏆 <b>Новое достижение!</b>\n\n%s <b>%s</b>\n%s",
+			a.IconEmoji, a.Name, a.Description,
+		))
 	}
 }
