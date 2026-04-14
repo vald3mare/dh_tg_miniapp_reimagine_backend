@@ -102,16 +102,15 @@ func Logger() gin.HandlerFunc {
 }
 
 func colorStatus(status int) string {
-	s := fmt.Sprintf("%d", status)
 	switch {
 	case status >= 500:
-		return "\033[31m" + s + "\033[0m" // красный
+		return fmt.Sprintf("ERR %d", status)
 	case status >= 400:
-		return "\033[33m" + s + "\033[0m" // жёлтый
+		return fmt.Sprintf("WRN %d", status)
 	case status >= 300:
-		return "\033[36m" + s + "\033[0m" // голубой
+		return fmt.Sprintf("RDR %d", status)
 	default:
-		return "\033[32m" + s + "\033[0m" // зелёный
+		return fmt.Sprintf("OK  %d", status)
 	}
 }
 
