@@ -16,6 +16,7 @@ import (
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 )
@@ -99,6 +100,55 @@ func seedCatalog(db *gorm.DB) {
 }
 
 func main() {
+	// Загружаем .env если он есть (молча игнорируем отсутствие файла)
+	if err := godotenv.Load(); err == nil {
+		log.Println("Загружен .env файл")
+	}
+
+	// ── Дамп переменных окружения при старте (для дебага) ─────────────────────
+	mask := func(v string) string {
+		if len(v) <= 6 {
+			return "***"
+		}
+		return v[:4] + "..." + v[len(v)-4:]
+	}
+	log.Printf(`
+┌─── ENV CONFIG ────────────────────────────────
+│ BOT_TOKEN             = %s
+│ ADMIN_TELEGRAM_IDS    = %s
+│ EXECUTOR_NOTIFY_CHAT_ID = %s
+│ DB_HOST               = %s
+│ DB_PORT               = %s
+│ DB_USER               = %s
+│ DB_PASSWORD           = %s
+│ DB_NAME               = %s
+│ DB_SSLMODE            = %s
+│ YOOKASSA_SHOP_ID      = %s
+│ YOOKASSA_SECRET_KEY   = %s
+│ YOOKASSA_RETURN_URL   = %s
+│ RECEIPT_EMAIL         = %s
+│ ORDERS_API_KEY        = %s
+│ PORT                  = %s
+│ GIN_MODE              = %s
+└───────────────────────────────────────────────`,
+		mask(os.Getenv("BOT_TOKEN")),
+		os.Getenv("ADMIN_TELEGRAM_IDS"),
+		os.Getenv("EXECUTOR_NOTIFY_CHAT_ID"),
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_USER"),
+		mask(os.Getenv("DB_PASSWORD")),
+		os.Getenv("DB_NAME"),
+		os.Getenv("DB_SSLMODE"),
+		os.Getenv("YOOKASSA_SHOP_ID"),
+		mask(os.Getenv("YOOKASSA_SECRET_KEY")),
+		os.Getenv("YOOKASSA_RETURN_URL"),
+		os.Getenv("RECEIPT_EMAIL"),
+		mask(os.Getenv("ORDERS_API_KEY")),
+		os.Getenv("PORT"),
+		os.Getenv("GIN_MODE"),
+	)
+
 	token := os.Getenv("BOT_TOKEN")
 	if token == "" {
 		log.Fatal("BOT_TOKEN environment variable is not set")
@@ -141,18 +191,7 @@ func main() {
 
 	// ── Роутер ────────────────────────────────────────────────────────────────
 	r := gin.New()
-	r.Use(gin.LoggerWithFormatter(func(p gin.LogFormatterParams) string {
-		return fmt.Sprintf("%s - [%s] \"%s %s %s\" %d %s \"%s\"\n",
-			p.ClientIP,
-			p.TimeStamp.Format(time.RFC1123),
-			p.Method,
-			p.Path,
-			p.Request.Proto,
-			p.StatusCode,
-			p.Latency,
-			p.Request.UserAgent(),
-		)
-	}))
+	r.Use(middleware.Logger())
 	r.Use(gin.Recovery())
 
 	r.Use(cors.New(cors.Config{

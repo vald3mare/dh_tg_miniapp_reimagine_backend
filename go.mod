@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
+	github.com/joho/godotenv v1.5.1
 	github.com/rvinnie/yookassa-sdk-go v0.1.4
 	github.com/telegram-mini-apps/init-data-golang v1.5.0
 	gorm.io/driver/postgres v1.6.0

@@ -140,11 +140,11 @@ func CreatePayment(db *gorm.DB) gin.HandlerFunc {
 		shopID := os.Getenv("YOOKASSA_SHOP_ID")
 		secretKey := os.Getenv("YOOKASSA_SECRET_KEY")
 		if shopID == "" || secretKey == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Платёжный сервис не настроен"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Платёжный сервис не настроен: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY"})
 			return
 		}
 
-		returnURL := os.Getenv("PAYMENT_RETURN_URL")
+		returnURL := os.Getenv("YOOKASSA_RETURN_URL")
 		if returnURL == "" {
 			returnURL = "https://t.me/"
 		}
