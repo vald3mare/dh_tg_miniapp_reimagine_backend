@@ -297,8 +297,24 @@ func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 			log.Printf("Webhook: платёж %s успешно оплачен (user_id=%d, item_id=%d)",
 				payment.YooKassaID, payment.UserID, payment.ItemID)
 
-			// Активируем подписку, если тип товара — subscription
+			// Создаём Order чтобы покупатель видел покупку в профиле
 			var item models.CatalogItem
+			if err := db.First(&item, payment.ItemID).Error; err == nil {
+				order := models.Order{
+					CustomerID:  &payment.UserID,
+					ServiceType: item.Name,
+					Description: payment.Description,
+					Price:       payment.Amount,
+					Status:      "open",
+				}
+				if err := db.Create(&order).Error; err != nil {
+					log.Printf("Webhook: не удалось создать заказ для платежа %s: %v", payment.YooKassaID, err)
+				} else {
+					log.Printf("Webhook: создан заказ #%d для user_id=%d", order.ID, payment.UserID)
+				}
+			}
+
+			// Активируем подписку, если тип товара — subscription
 			if err := db.First(&item, payment.ItemID).Error; err == nil && item.Type == "subscription" {
 				now := time.Now()
 				sub := models.Subscription{

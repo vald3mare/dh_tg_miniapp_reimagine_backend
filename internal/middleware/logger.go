@@ -83,8 +83,9 @@ func Logger() gin.HandlerFunc {
 		}
 
 		// Базовая строка
-		line := fmt.Sprintf("→ %s %-35s %s  %-7s%s",
-			method, path, statusStr, latStr, userStr)
+		ts := time.Now().Format("2006-01-02 15:04:05")
+		line := fmt.Sprintf("%s → %s %-35s %s  %-7s%s",
+			ts, method, path, statusStr, latStr, userStr)
 
 		// Для ошибок добавляем тело ответа (обрезаем до 300 символов)
 		if status >= 400 {
