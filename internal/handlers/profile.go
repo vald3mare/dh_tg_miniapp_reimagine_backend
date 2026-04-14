@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/middleware"
 	"github.com/Vald3mare/dogshappinies/backend_reimagine/internal/models"
@@ -90,5 +91,126 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"user": user})
+	}
+}
+
+// UpdateProfileSettings — PATCH /profile/settings
+// Обновляет display_name, city, avatar_data_url — данные хранятся в БД за юзером.
+func UpdateProfileSettings(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := middleware.CtxUser(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+			return
+		}
+
+		var body struct {
+			DisplayName   *string `json:"display_name"`
+			City          *string `json:"city"`
+			AvatarDataURL *string `json:"avatar_data_url"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		updates := map[string]any{}
+		if body.DisplayName != nil   { updates["display_name"]    = *body.DisplayName }
+		if body.City != nil          { updates["city"]             = *body.City }
+		if body.AvatarDataURL != nil { updates["avatar_data_url"] = *body.AvatarDataURL }
+
+		if len(updates) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Нечего обновлять"})
+			return
+		}
+
+		if err := db.Model(user).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить профиль"})
+			return
+		}
+
+		// Обновляем локальную копию для ответа
+		if body.DisplayName != nil   { user.DisplayName   = *body.DisplayName }
+		if body.City != nil          { user.City          = *body.City }
+		if body.AvatarDataURL != nil { user.AvatarDataURL = *body.AvatarDataURL }
+
+		c.JSON(http.StatusOK, gin.H{
+			"display_name":    user.DisplayName,
+			"city":            user.City,
+			"avatar_data_url": user.AvatarDataURL,
+		})
+	}
+}
+
+// GetPets — GET /profile/pets
+func GetPets(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := middleware.CtxUser(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+			return
+		}
+		var pets []models.Pet
+		db.Where("user_id = ?", user.ID).Order("created_at ASC").Find(&pets)
+		c.JSON(http.StatusOK, gin.H{"pets": pets})
+	}
+}
+
+// AddPet — POST /profile/pets
+func AddPet(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := middleware.CtxUser(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+			return
+		}
+
+		var body struct {
+			Name  string `json:"name"  binding:"required"`
+			Emoji string `json:"emoji"`
+			Breed string `json:"breed"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		emoji := body.Emoji
+		if emoji == "" { emoji = "🐾" }
+
+		pet := models.Pet{UserID: user.ID, Name: body.Name, Emoji: emoji, Breed: body.Breed}
+		if err := db.Create(&pet).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось добавить питомца"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"pet": pet})
+	}
+}
+
+// DeletePet — DELETE /profile/pets/:id
+func DeletePet(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := middleware.CtxUser(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+			return
+		}
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+			return
+		}
+
+		result := db.Where("id = ? AND user_id = ?", id, user.ID).Delete(&models.Pet{})
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
+			return
+		}
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Питомец не найден"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }

@@ -297,7 +297,7 @@ func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 			log.Printf("Webhook: платёж %s успешно оплачен (user_id=%d, item_id=%d)",
 				payment.YooKassaID, payment.UserID, payment.ItemID)
 
-			// Создаём Order чтобы покупатель видел покупку в профиле
+			// Создаём Order чтобы покупатель видел покупку в профиле + уведомляем
 			var item models.CatalogItem
 			if err := db.First(&item, payment.ItemID).Error; err == nil {
 				order := models.Order{
@@ -311,6 +311,18 @@ func HandlePaymentWebhook(db *gorm.DB) gin.HandlerFunc {
 					log.Printf("Webhook: не удалось создать заказ для платежа %s: %v", payment.YooKassaID, err)
 				} else {
 					log.Printf("Webhook: создан заказ #%d для user_id=%d", order.ID, payment.UserID)
+				}
+
+				// Уведомляем клиента через бота
+				var user models.User
+				if db.First(&user, payment.UserID).Error == nil {
+					go NotifyUser(user.TelegramID, fmt.Sprintf(
+						"✅ Оплата прошла успешно!\n\n"+
+							"Услуга: <b>%s</b>\n"+
+							"Сумма: %.0f ₽\n\n"+
+							"Исполнитель свяжется с вами в ближайшее время 🐾",
+						item.Name, payment.Amount,
+					))
 				}
 			}
 

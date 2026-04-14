@@ -116,7 +116,7 @@ func main() {
 ┌─── ENV CONFIG ────────────────────────────────
 │ BOT_TOKEN             = %s
 │ ADMIN_TELEGRAM_IDS    = %s
-│ EXECUTOR_NOTIFY_CHAT_ID = %s
+│ EXECUTOR_NOTIFY_CHAT_ID = %s 
 │ DB_HOST               = %s
 │ DB_PORT               = %s
 │ DB_USER               = %s
@@ -182,6 +182,7 @@ func main() {
 		&models.Achievement{},
 		&models.UserAchievement{},
 		&models.ExecutorApplication{},
+		&models.Pet{},
 	); err != nil {
 		log.Fatalf("AutoMigrate завершился с ошибкой: %v", err)
 	}
@@ -219,6 +220,8 @@ func main() {
 
 	// Webhook от ЮKassa — публичный, вызывается их серверами
 	r.POST("/payment/webhook", handlers.HandlePaymentWebhook(database))
+	// Уведомление от бота об успешной оплате через Telegram Pay
+	r.POST("/payment/telegram-success", handlers.HandleTelegramPayment(database))
 
 	auth := middleware.AuthMiddleware(token)
 
@@ -234,7 +237,14 @@ func main() {
 	userProtected.Use(auth)
 	userProtected.Use(middleware.LoadUser(database))
 	{
+		// Настройки профиля и питомцы
+		userProtected.PATCH("/profile/settings", handlers.UpdateProfileSettings(database))
+		userProtected.GET("/profile/pets", handlers.GetPets(database))
+		userProtected.POST("/profile/pets", handlers.AddPet(database))
+		userProtected.DELETE("/profile/pets/:id", handlers.DeletePet(database))
+
 		userProtected.POST("/payment/create", handlers.CreatePayment(database))
+		userProtected.POST("/payment/invoice", handlers.CreateInvoiceLink(database))
 		userProtected.POST("/profile/role", handlers.SetRole(database))
 
 		// Клиент: создать заявку и посмотреть свои заказы
